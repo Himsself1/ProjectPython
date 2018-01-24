@@ -18,27 +18,28 @@ parser.add_argument('--action', nargs=1)  ##Το πρόγραμμά σας θα 
 
 args = parser.parse_args()
 
+
 input_file = 'chr22_25_lines.vcf'
-#input_file = args.vcf
+## input_file = args.vcf
 
 
 def read_vcf_file(file_name):
-	'''
-	Create a string with the header and a list with the data
-	'''
-	## Agnooume tis grammes pou arxizoun me '##'
-	data = file_name.readline()
-	while data[:2] == '##':
-		data = file_name.readline()
+        '''
+        Create a string with the header and a list with the data
+        '''
+        ## Agnooume tis grammes pou arxizoun me '##'
+        data = file_name.readline()
+        while data[:2] == '##':
+                data = file_name.readline()
 	## Ka8arizoume to arxeio
-	header=data.split("\n")[0]
-	header = header.split("\t")
-	data = file_name.read()
+        header = data.rstrip("\n").split("\t")
+        print(header)
+        data = file_name.read()        
 	data = data.split('\n')
-	data_clean = [ i.split('\t') for i in data ]
-	if len(data_clean[-1]) == 0:
-		data_clean = data_clean[0:len(data_clean)-1]
-	return header, data_clean
+        data_clean = [ i.split('\t') for i in data ]
+        if len(data_clean[-1]) == 0:
+                data_clean = data_clean[0:len(data_clean)-1]
+        return header, data_clean
 
 def info_vcf( data ):
 	'''
