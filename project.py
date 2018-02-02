@@ -1,184 +1,185 @@
+#Copyright (C) 2017-2018 Alexandros Kanterakis, mail:kantale@ics.forth.gr
 ###reference material: https://gist.github.com/kantale/81d7d728c22fb35d77112c3633e17389
 
-!pip install numpy
-
-#------------our imports----------------------
+#########################----IMPORTS-------------------------------
 
 import argparse
 import gzip
 import re
 import numpy as np
-import assert
+import pandas as pd
+from collections import Counter
+import random
 
 
-
-'lets\ttest\tthis\tshit\nthis\tis\tan\t\array'
-
-
-
-#------------our arguments-----------------------
+##################### ------------our arguments-----------------------
 parser = argparse.ArgumentParser()
 
-#part1
-parser.add_argument('--vcf', nargs=1)  ###θα παίρνει ένα vcf ή ένα vcf.gz αρχείο
-parser.add_argument('--action', nargs=1)  ##Το πρόγραμμά σας θα τυπώνει πόσα SNPs έχει το vcf και πόσα samples.
+parser.add_argument('--vcf', nargs = 1)  ###θα παίρνει ένα vcf ή ένα vcf.gz αρχείο
+parser.add_argument('--action', nargs = 1)  ##Το πρόγραμμά σας θα τυπώνει πόσα SNPs έχει το vcf και πόσα samples.
 
 
 
-##example > python project.py --vcf 1kgp_chr1.vcf.gz --action VCF_INFO
+input_file = 'chr22_25_lines.vcf'
+sample_file= 'sample_information.csv'
+## input_file = args.vcf
 
-#File has 2502 samples
-#File has 1234567 SNPs
+###########------------our functions------------------
 
-#part2
-parser.add_argument('--sample_filename', nargs=1)
-
-##--action == SAMPLE_INFO , ==VALIDATE_SAMPLE_INFO
-
-
-
-
-
-##part3
-
-parser.add_argument('--population', nargs=2)  ##POPULATION_NAME, NUMBER_OF_SAMPLES
-parser.add_argument('--SNPs', nargs=1)
-parser.add_argument('--output', nargs=1)
-### ++++ action= SIMULATION
-## > python project.py --vcf 1kgp_chr1.vcf.gz --sample_filename sample_information.csv --population GBR 100 --SNPs 1000 --output random_genotypes.vcf --action SIMULATE
-
-##part4
-###multiple population samples
-
-##part5
-parser.add_argument('--independent', nargs=1)  #<NUMBER_OF_INDEPENDENT_SNPs bases in all populations given
-
-##part6----PCA!!
-
-parser.add_argument('--input_filename', nargs=1)
-parser.add_argument('--PCA_filename', nargs=1)
-parser.add_argument('--PCA_plot', nargs=1)
-##action = PCA
-
-
-##part7   k-means
-
-###--PCA_filename , --action = CLUSTER
-
-##part8
-#--independent , --action FIND_RATIO 
-
-##part9
-parser.add_argument('--iterations', nargs=1)  #NUMER_OF_ITERATIONS
-parser.add_argument('--MINIMUM_AF', nargs=1)  #MINIMUM_ALLELE_FREQUENCY
+def read_vcf_file(file_name):
+	'''
+	Create a pandas table with header 
+	'''
+	if re.match('.+vcf.gz$', file_name):
+		with gzopen(file_name, 'r') as f:
+			lines = [l for l in f if not l.startswith('##')]
+		lines=list(map(lambda each:each.replace("\n",""), lines))
+		df=pd.Series(lines)
+		df=df.str.split("\t", expand=True)
+		df.columns = df.iloc[0]
+		df=df.reindex(df.index.drop(0))
+		return df[df['INFO'].str.contains("VT=SNP")]   ###dataframe contains only SNIP's
+	elif re.match('.+vcf$', file_name):
+		with open(file_name, 'r') as f:
+			lines = [l for l in f if not l.startswith('##')]
+		lines=list(map(lambda each:each.replace("\n",""), lines))
+		df=pd.Series(lines)
+		df=df.str.split("\t", expand=True)
+		df.columns = df.iloc[0]
+		df=df.reindex(df.index.drop(0))
+		return df[df['INFO'].str.contains("VT=SNP")]
+	else :
+		raise Exception("Invalid File Extension")
+	
+def vcf_info(file_name) :
+	df=read_vcf_file(file_name)
+	print ("File has", df.shape[1]-9,"samples" ,"\n","File has",df.shape[0],"SNPs" )
 
 
-parser.add_argument('----START', nargs=1)
-parser.add_argument('--END', nargs=1)
+def sample_info(sample_file):
+	df=pd.read_csv(sample_file, sep="\t", header = 0)
+	print ("File has", len(df.super_pop.unique()), "Areas.")
+	for i in range(0,len(df.super_pop.unique())) :
+		print("Area", i+1, "is",
+			df.super_pop.unique()[i],
+			"and contains",
+			df[(df["super_pop"]==df.super_pop.unique()[i])].shape[0],
+			"samples splitted in the following populations:")
+		q=df[(df["super_pop"]==df.super_pop.unique()[i])]
+		for k in range(0,len(q['pop'].unique())) :
+			print (q['pop'].unique()[k], q[(q["pop"]==q['pop'].unique()[k])].shape[0],"samples")
+	
+def validate_sample(file_name, sample_file ) :
+	our_samples=np.array(read_vcf_file(file_name).columns.values[9:])
+	id_array=np.array(pd.read_csv(sample_file, sep="\t", header = 0)["sample"].tolist())
+	if np.array_equiv(np.sort(our_samples),np.sort(id_array)):
+		print ("Everything is OK!")
+	else :
+		b = np.setdiff1d(id_array,our_samples)
+		q = np.setdiff1d(our_samples,id_array)
+		if len(b) != 0:
+			print( "These samples are present in VCF but not in SAMPLE:", b )
+		if len(q) != 0:
+			print( "These samples are present in SAMPLE but not in VCF:", q )
+			
+			
+def generate_pop_freq( my_data, sample_file, pop_name ):
+	'''
+	Generates a frequency vector for each SNP for individuals in a given population
+	'''
+	## Stores the decription of individuals
+	pop_parameters = np.loadtxt( sample_file, delimiter = "\t", skiprows = 1, dtype = "object" ) 
+	## Makes a dictionary with keys = population names and values = individuals in each population
+	pop_dict = dict()
+	for i in range(0, pop_parameters.shape[0]):
+		if pop_parameters[i,1] in pop_dict.keys():
+			pop_dict[pop_parameters[i,1]] = pop_dict[pop_parameters[i,1]] + [pop_parameters[i,0]]
+		else:
+			pop_dict[pop_parameters[i,1]] = [pop_parameters[i,0]]
+	## Swap genotypes with numbers to m ake calculations easier
+	if pop_name in pop_dict.keys():
+		z = np.array([my_data[x] for x in pop_dict[pop_name]])
+		z[ z == '0|0' ] = 0
+		z[ z == '1|0' ] = 1
+		z[ z == '0|1' ] = 1
+		z[ z == '1|1' ] = 2
+	else:
+		print( "Population name: {} was not in the list of names: {}".format(pop.name, pop_dict.keys()))
+		assert( 0 )
+	return np.array( z.sum( axis = 0 )/z.shape[0] )
+	
 
-#part10
-#--action DENDROGRAM
+def create_output_list( file_name, sample_file, pop_name, sample_number ,snps, index) :
+	df=read_vcf_file(file_name)
+	print ((pop_name))
+	frequency=generate_pop_freq(df, sample_file, pop_name)
+	header=[pop_name+str(k) for k in range(1,sample_number+1)]
+	output_list = []
+	for it in range(0,snps):
+		snp_freq = frequency[index[it]]
+		ones = int(snp_freq*2*sample_number // 1) ## Posa 1 8a uparxoun sto dataset? Takes the integer part of the number
+		if ones==0 :
+			genotype = []
+			for k in range(0,sample_number*2-1,2):
+				genotype.append("0"+'|'+"0") ## Kanw concatenate to genotype
+			output_list.append(genotype)
+		else :
+			a = random.sample(range(2*sample_number), ones)
+			output = [0]*2*sample_number
+			for i in a:
+				output[i] = 1 ## Ftiaxnw tous assous
+			genotype = []
+			for k in range(0,len(output)-1,2):
+				genotype.append(str(output[k])+'|'+str(output[k+1])) ## Kanw concatenate to genotype
+			output_list.append(genotype)
+	
+	return pd.DataFrame(output_list, columns=header)
+	
 
-#part11 (optional)  jaccard index
-
-input_file = '1kgp_chr1.vcf.gz'
-
-with gzip.open(input_file, 'rt') as arxeio:
-    print( arxeio.readline() )
 
 
-## Downloading files
+def simulate(input_file, sample_file, pop_name, snps, my_output_file) :
+	'''Both part 3 and 4'''
+	sample_list=[]
+	data=read_vcf_file(input_file)
+	snp_freq_index=[]
+	for i in range(0,snps) :
+		snp_freq_index.append(random.choice(range(0,data.shape[0])))  ####random snp index 
+	for i in range(0,len(pop_name)) :
+		sample_list.append(create_output_list(input_file, sample_file, pop_name[i][0], int(pop_name[i][1]), snps, snp_freq_index))
+
+	
+	pd.concat(sample_list, axis=1).to_csv(my_output_file, sep="\t", mode='w', index=False)
+
+#####---------PART1-----------
+
+#vcf_info(input_file)
+
+#####---------PART2-------------
+
+
+#sample_info(sample_file)
+#validate_sample(input_file, sample_file)
+
+#####--------PART3 and 4-----------
+
+pop_name="GBR"
+sample_number=10
+snps=100
+
+
+
+parser.add_argument('--population', nargs = 2, action='append')  ###θα παίρνει ένα vcf ή ένα vcf.gz αρχείο
 
 args = parser.parse_args()
-input_file = args.vcf
+pop_nams=args.population
+#simulate(input_file, sample_file, pop_nams, snps, "output.vcf")
 
-############# Reading the file #######################
-if re.match('.+vcf.gz$', input_file):
-    with gzip.open(input_file, 'rt') as arxeio:
-        mia_metablhth = diavazw_vcf( arxeio )
-elif re.match('.+.vcf$', input_file):
-    with open(input_file, 'rt') as arxeio:
-        mia_metablhth = diavazw_vcf( arxeio )
-else:
-    print( 'WTF IS THIS FILE: {}'.format(input_file) )
-    assert(0)
-#####################################################
 
-print (sample_data)
-
-########################## TEST ####################################
-
-############# PART 1 #####################
-input_file = 'chr20_lines.vcf'
-file_name = open( input_file, 'rt' )
-header, data = diavazw_vcf(file_name)
-info_vcf( data )
-file_name.close()
-#########################################
-
-############## PART 2 ###################
+####---------PART5----------------------
 
 
 
 
-sample_filename = 'sample_information.csv'
-sample_file = open(sample_filename)
-sample_data = sample_file.read()
-sample_file.close()
-sample_array=np.loadtxt("sample_iformation.csv", delimiter="\t", skiprows = 1)
-
-sample_data_splitted = [x.split() for x in sample_data.split('\n')]
-
-print(sample_data_splitted)
-
-setted_population=set(sample_array['super_pop'])
-print(setted_population) 
 
 
-
-print(header)
-
-###################################################################
-
-def diavazw_vcf( file_name ):
-    '''
-    Oti leei to onoma
-    '''
-    ## Agnooume tis grammes pou arxizoun me '##'
-    data = file_name.readline()
-    while data[:2] == '##':
-        data = file_name.readline()
-    ## Ka8arizoume to arxeio
-    header = data
-    data = file_name.read()
-    data = data.split('\n')
-    data_clean = [ i.split('\t') for i in data ]
-    if len(data_clean[-1]) == 0:
-        data_clean = data_clean[0:len(data_clean)-1]
-    return header, data_clean
-
-def info_vcf( data ):
-    '''
-    Briskw posa samples kai posa SNPs exei to arxeio 
-    '''
-    ###information = [ i[7].split(';') for i in data ]
-    AC = []
-    for i in data:
-        info_dict = dict([j.split('=') for j in i[7].split(';')])
-        if info_dict["VT"]=="SNP" :
-            AC.append(int(info_dict['AC']))
-    # print (info_dict)
-    print( 'Minor alleles are: {}'.format(sum(AC)) )
-    print( 'Samples are: {}'.format(info_dict['NS']) )
-
-
-
-
-    
-    
-    # for i in data :
-    #     info_dict = dict([x.split('=') for x in info.split(';')])
-    #     if x[] :
-    #         counter++
-
-    
