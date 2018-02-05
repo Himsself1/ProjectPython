@@ -108,7 +108,35 @@ def generate_pop_freq( my_data, sample_file, pop_name ):
 		assert( 0 )
 	return np.array( z.sum( axis = 0 )/z.shape[0] )
 	
-
+def generate_independent_freq( my_data, sample_file, pop_nams ):
+	'''
+	Generates a frequency vector for each SNP for individuals in a given population
+	'''
+	## Stores the decription of individuals
+	pop_parameters = np.loadtxt( sample_file, delimiter = "\t", skiprows = 1, dtype = "object" ) 
+	## Makes a dictionary with keys = population names and values = individuals in each population
+	pop_dict = dict()
+	for i in range(0, pop_parameters.shape[0]):
+		if pop_parameters[i,1] in pop_dict.keys():
+			pop_dict[pop_parameters[i,1]] = pop_dict[pop_parameters[i,1]] + [pop_parameters[i,0]]
+		else:
+			pop_dict[pop_parameters[i,1]] = [pop_parameters[i,0]]
+	## Swap genotypes with numbers to m ake calculations easier
+	multiple_pops=[]
+	for pop_name in pop_nams :
+		if pop_name in pop_dict.keys():
+			multiple_pops.append(np.array([my_data[x] for x in pop_dict[pop_name]]))
+		else:
+			print( "Population name: {} was not in the list of names: {}".format(pop.name, pop_dict.keys()))
+			assert( 0 )
+	z=np.concatenate(multiple_pops)
+	z[ z == '0|0' ] = 0
+	z[ z == '1|0' ] = 1
+	z[ z == '0|1' ] = 1
+	z[ z == '1|1' ] = 2
+	return np.array( z.sum( axis = 0 )/z.shape[0] )
+	
+	
 def create_output_list( file_name, sample_file, pop_name, sample_number ,snps, index) :
 	df=read_vcf_file(file_name)
 	print ((pop_name))
@@ -132,25 +160,50 @@ def create_output_list( file_name, sample_file, pop_name, sample_number ,snps, i
 			for k in range(0,len(output)-1,2):
 				genotype.append(str(output[k])+'|'+str(output[k+1])) ## Kanw concatenate to genotype
 			output_list.append(genotype)
-	
 	return pd.DataFrame(output_list, columns=header)
 	
+def create_output_independent_list( file_name, sample_file, pop_names, sample_number ,snps, index) :
+	df=read_vcf_file(file_name)
+	frequency=generate_independent_freq(df, sample_file, pop_names)
+	header=["Independent"+str(k) for k in range(1,sample_number+1)]
+	output_list = []
+	for it in range(0,snps):
+		snp_freq = frequency[index[it]]
+		ones = int(snp_freq*2*sample_number // 1) ## Posa 1 8a uparxoun sto dataset? Takes the integer part of the number
+		if ones==0 :
+			genotype = []
+			for k in range(0,sample_number*2-1,2):
+				genotype.append("0"+'|'+"0") ## Kanw concatenate to genotype
+			output_list.append(genotype)
+		else :
+			a = random.sample(range(2*sample_number), ones)
+			output = [0]*2*sample_number
+			for i in a:
+				output[i] = 1 ## Ftiaxnw tous assous
+			genotype = []
+			for k in range(0,len(output)-1,2):
+				genotype.append(str(output[k])+'|'+str(output[k+1])) ## Kanw concatenate to genotype
+			output_list.append(genotype)
+	return pd.DataFrame(output_list, columns=header)
 
 
-
-def simulate(input_file, sample_file, pop_name, snps, my_output_file) :
+def simulate(input_file, sample_file, pop_name, snps, my_output_file, independent=None) :
 	'''Both part 3 and 4'''
 	sample_list=[]
 	data=read_vcf_file(input_file)
 	snp_freq_index=[]
+	pop_names=[]
 	for i in range(0,snps) :
 		snp_freq_index.append(random.choice(range(0,data.shape[0])))  ####random snp index 
 	for i in range(0,len(pop_name)) :
+		pop_names.append(pop_name[i][0])
 		sample_list.append(create_output_list(input_file, sample_file, pop_name[i][0], int(pop_name[i][1]), snps, snp_freq_index))
-
-	
+	if independent==None :
+		pd.concat(sample_list, axis=1).to_csv(my_output_file, sep="\t", mode='w', index=False)
+	else :
+		sample_list.append(create_output_independent_list(input_file, sample_file, pop_names, independent, snps, snp_freq_index))
+		
 	pd.concat(sample_list, axis=1).to_csv(my_output_file, sep="\t", mode='w', index=False)
-
 #####---------PART1-----------
 
 #vcf_info(input_file)
@@ -173,12 +226,13 @@ parser.add_argument('--population', nargs = 2, action='append')  ###θα παί�
 
 args = parser.parse_args()
 pop_nams=args.population
-#simulate(input_file, sample_file, pop_nams, snps, "output.vcf")
+simulate(input_file, sample_file, pop_nams, snps, "output.vcf")
 
 
 ####---------PART5----------------------
+simulate(input_file, sample_file, pop_nams,snps, "output.vcf", 20)
 
-
+####------RART6------------------
 
 
 
