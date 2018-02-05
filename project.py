@@ -8,8 +8,11 @@ import gzip
 import re
 import numpy as np
 import pandas as pd
-from collections import Counter
+from sklearn.decomposition import PCA
 import random
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+
 
 
 ##################### ------------our arguments-----------------------
@@ -38,7 +41,8 @@ def read_vcf_file(file_name):
 		df=df.str.split("\t", expand=True)
 		df.columns = df.iloc[0]
 		df=df.reindex(df.index.drop(0))
-		return df[df['INFO'].str.contains("VT=SNP")]   ###dataframe contains only SNIP's
+		df=df[df['INFO'].str.contains("VT=SNP")] 
+		return df[~df['INFO'].str.contains("MULTI")]  ###dataframe contains only SNP's
 	elif re.match('.+vcf$', file_name):
 		with open(file_name, 'r') as f:
 			lines = [l for l in f if not l.startswith('##')]
@@ -47,7 +51,9 @@ def read_vcf_file(file_name):
 		df=df.str.split("\t", expand=True)
 		df.columns = df.iloc[0]
 		df=df.reindex(df.index.drop(0))
-		return df[df['INFO'].str.contains("VT=SNP")]
+		df=df[df['INFO'].str.contains("VT=SNP")] 
+		return df[~df['INFO'].str.contains("MULTI")] 
+		
 	else :
 		raise Exception("Invalid File Extension")
 	
@@ -99,14 +105,28 @@ def generate_pop_freq( my_data, sample_file, pop_name ):
 	## Swap genotypes with numbers to m ake calculations easier
 	if pop_name in pop_dict.keys():
 		z = np.array([my_data[x] for x in pop_dict[pop_name]])
-		z[ z == '0|0' ] = 0
-		z[ z == '1|0' ] = 1
-		z[ z == '0|1' ] = 1
-		z[ z == '1|1' ] = 2
+		ret=convert_genotype_to_number(z)
+	
 	else:
 		print( "Population name: {} was not in the list of names: {}".format(pop.name, pop_dict.keys()))
 		assert( 0 )
-	return np.array( z.sum( axis = 0 )/z.shape[0] )
+	## print (ret[0:10,])
+	return np.array( ret.sum( axis = 0 )/ret.shape[0] )
+
+def convert_genotype_to_number(z):
+	'''
+	Oti leei to onoma.
+	'''
+	if z[ z not in np.array(['0|0','1|0','0|1','1|1',])].shape[0] != 0:
+		## print( z[ z not in np.array(['0|0','1|0','0|1','1|1',])] )
+		## raise Exception("INVALID_SNP_GENOTYPE")
+		pass
+	
+	z[ z == '0|0' ] = 0
+	z[ z == '1|0' ] = 1
+	z[ z == '0|1' ] = 1
+	z[ z == '1|1' ] = 2
+	return z
 	
 def generate_independent_freq( my_data, sample_file, pop_nams ):
 	'''
@@ -130,18 +150,14 @@ def generate_independent_freq( my_data, sample_file, pop_nams ):
 			print( "Population name: {} was not in the list of names: {}".format(pop.name, pop_dict.keys()))
 			assert( 0 )
 	z=np.concatenate(multiple_pops)
-	z[ z == '0|0' ] = 0
-	z[ z == '1|0' ] = 1
-	z[ z == '0|1' ] = 1
-	z[ z == '1|1' ] = 2
-	return np.array( z.sum( axis = 0 )/z.shape[0] )
+	ret=convert_genotype_to_number(z)
+	return np.array( ret.sum( axis = 0 )/ret.shape[0] )
 	
 	
 def create_output_list( file_name, sample_file, pop_name, sample_number ,snps, index) :
 	df=read_vcf_file(file_name)
-	print ((pop_name))
 	frequency=generate_pop_freq(df, sample_file, pop_name)
-	header=[pop_name+str(k) for k in range(1,sample_number+1)]
+	header=[pop_name+"_"+str(k) for k in range(1,sample_number+1)]
 	output_list = []
 	for it in range(0,snps):
 		snp_freq = frequency[index[it]]
@@ -165,7 +181,7 @@ def create_output_list( file_name, sample_file, pop_name, sample_number ,snps, i
 def create_output_independent_list( file_name, sample_file, pop_names, sample_number ,snps, index) :
 	df=read_vcf_file(file_name)
 	frequency=generate_independent_freq(df, sample_file, pop_names)
-	header=["Independent"+str(k) for k in range(1,sample_number+1)]
+	header=["Independent_"+str(k) for k in range(1,sample_number+1)]
 	output_list = []
 	for it in range(0,snps):
 		snp_freq = frequency[index[it]]
@@ -230,10 +246,49 @@ simulate(input_file, sample_file, pop_nams, snps, "output.vcf")
 
 
 ####---------PART5----------------------
-simulate(input_file, sample_file, pop_nams,snps, "output.vcf", 20)
+#simulate(input_file, sample_file, pop_nams,snps, "output.vcf", 10)
 
-####------RART6------------------
+####----------PART6------------------------------
 
+###PCA 
 
+def my_pca(input_file) : #output_file, plot_file) :
+	#####simulate(input_file, sample_file, pop_nams,snps, "output.vcf")
+	np_table=np.loadtxt(input_file, delimiter="\t", dtype="object")
+	header=pd.Series(np_table[0,])
+	##print (header.str.split("_"))
+	kefali = pd.DataFrame(header.str.split("_").tolist(), columns=["population", "index"])
+	kefali["index"] = pd.to_numeric(kefali['index'])
+	aa = kefali.groupby("population").count()
+	## print( aa)
+	genotypes_array=convert_genotype_to_number(np_table[1:,])
+	## print(genotypes_array.sum(axis = 0))
+	pca = PCA(n_components=2)
+	pca.fit(genotypes_array.T)
+	genotypes_PCA = pca.transform(genotypes_array.T)
+	
+	left = 0
+	cmap = mpl.cm.autumn
+	for i in aa.values:
+		plt.plot(genotypes_PCA[left:left+i[0],0], genotypes_PCA[left:left+i[0],1], '.', label="pop")
+		print((i[0]),left)
+		left = left + i[0]
+	## plt.plot(genotypes_PCA[100:,0], genotypes_PCA[100:,1], '.', color="blue")
+	plt.show()
+my_pca("output.vcf")	
 
-
+# def pops_in_my_output(header):
+	# '''
+	# Dictionary with keys = different populations and values = indexes of populations
+	# '''
+	# temp_dict = {}
+	# [ temp_dict[i.split('_')[0]].append(int(i.split('_')[1])) for i in header.tolist() ]
+# # q=np.array([[1,2,3],
+			# # [4,5,6],
+			# # [5,6,7],
+			# # [5,6,7]])
+# # print(q.shape)
+# # a = q[q in np.array([10])]
+# # print('######################################')
+# # print(a)
+# # print(a.shape)
