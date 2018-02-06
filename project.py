@@ -9,6 +9,7 @@ import re
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
 import random
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -220,6 +221,26 @@ def simulate(input_file, sample_file, pop_name, snps, my_output_file, independen
 		sample_list.append(create_output_independent_list(input_file, sample_file, pop_names, independent, snps, snp_freq_index))
 		
 	pd.concat(sample_list, axis=1).to_csv(my_output_file, sep="\t", mode='w', index=False)
+	
+	
+def my_pca(input_file, output_file, plot_file) :
+	np_table=np.loadtxt(input_file, delimiter="\t", dtype="object")
+	header=pd.Series(np_table[0,])
+	aa = read_my_labels(header)
+	genotypes_array=convert_genotype_to_number(np_table[1:,])
+	pca = PCA(n_components=2)
+	pca.fit(genotypes_array.T)
+	genotypes_PCA = pca.transform(genotypes_array.T)
+	left = 0
+	for i in aa.values:
+		plt.plot(genotypes_PCA[left:left+i[0],0], genotypes_PCA[left:left+i[0],1], '.', label=i)
+		left = left + i[0]
+	## plt.plot(genotypes_PCA[100:,0], genotypes_PCA[100:,1], '.', color="blue")
+	plt.savefig(plot_file)
+	header=np.array(header)
+	fmt="%s\t%f\t%f"
+	q=np.column_stack((header,genotypes_PCA))
+	np.savetxt(output_file, q ,fmt=fmt)
 #####---------PART1-----------
 
 #vcf_info(input_file)
@@ -242,7 +263,7 @@ parser.add_argument('--population', nargs = 2, action='append')  ###θα παί�
 
 args = parser.parse_args()
 pop_nams=args.population
-simulate(input_file, sample_file, pop_nams, snps, "output.vcf")
+#simulate(input_file, sample_file, pop_nams, snps, "output.vcf")
 
 
 ####---------PART5----------------------
@@ -252,43 +273,36 @@ simulate(input_file, sample_file, pop_nams, snps, "output.vcf")
 
 ###PCA 
 
-def my_pca(input_file) : #output_file, plot_file) :
-	#####simulate(input_file, sample_file, pop_nams,snps, "output.vcf")
+
+	
+	
+##my_pca("output.vcf", "pca_file.tsv", "pca_plot.pdf")	
+
+
+######---------PART7-------------------------
+
+def k_means(input_file) :
 	np_table=np.loadtxt(input_file, delimiter="\t", dtype="object")
-	header=pd.Series(np_table[0,])
-	##print (header.str.split("_"))
-	kefali = pd.DataFrame(header.str.split("_").tolist(), columns=["population", "index"])
+	header=pd.Series(np_table[:,0])
+	aa = read_my_labels(header)
+	genotypes_PCA=np_table[:,1:]
+	kmeans = KMeans(n_clusters=3, random_state=0).fit(genotypes_PCA)
+	
+	##[ for i in set(kmeans.labels_) ]
+	print (kmeans.labels_)
+	# for i in aa.values:
+	
+		
+		# left = left + i[0]
+	
+	
+def read_my_labels( my_vector ):
+	'''
+	Takes a pd.Series with label names and returns grouped labels
+	'''
+	kefali = pd.DataFrame(my_vector.str.split("_").tolist(), columns=["population", "index"])
 	kefali["index"] = pd.to_numeric(kefali['index'])
 	aa = kefali.groupby("population").count()
-	## print( aa)
-	genotypes_array=convert_genotype_to_number(np_table[1:,])
-	## print(genotypes_array.sum(axis = 0))
-	pca = PCA(n_components=2)
-	pca.fit(genotypes_array.T)
-	genotypes_PCA = pca.transform(genotypes_array.T)
-	
-	left = 0
-	cmap = mpl.cm.autumn
-	for i in aa.values:
-		plt.plot(genotypes_PCA[left:left+i[0],0], genotypes_PCA[left:left+i[0],1], '.', label="pop")
-		print((i[0]),left)
-		left = left + i[0]
-	## plt.plot(genotypes_PCA[100:,0], genotypes_PCA[100:,1], '.', color="blue")
-	plt.show()
-my_pca("output.vcf")	
+	return aa
 
-# def pops_in_my_output(header):
-	# '''
-	# Dictionary with keys = different populations and values = indexes of populations
-	# '''
-	# temp_dict = {}
-	# [ temp_dict[i.split('_')[0]].append(int(i.split('_')[1])) for i in header.tolist() ]
-# # q=np.array([[1,2,3],
-			# # [4,5,6],
-			# # [5,6,7],
-			# # [5,6,7]])
-# # print(q.shape)
-# # a = q[q in np.array([10])]
-# # print('######################################')
-# # print(a)
-# # print(a.shape)
+k_means("pca_file.tsv")
