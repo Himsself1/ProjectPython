@@ -286,15 +286,14 @@ def k_means(input_file) :
 	header=pd.Series(np_table[:,0])
 	aa = read_my_labels(header)
 	genotypes_PCA=np_table[:,1:]
-	kmeans = KMeans(n_clusters=3, random_state=0).fit(genotypes_PCA)
-	
-	##[ for i in set(kmeans.labels_) ]
+	kmeans = KMeans(n_clusters=4, random_state=0).fit(genotypes_PCA)
 	print (kmeans.labels_)
-	# for i in aa.values:
-	
-		
-		# left = left + i[0]
-	
+	# belong_to_1_clustered_2 = sum([1 for i,x in enumerate(kmeans.labels_) if i<aa["YRI"] and x==0])
+	# belong_to_2_clustered_1 = sum([1 for i,x in enumerate(kmeans.labels_) if i>=aa["YRI"] and x==1])
+	# errors = belong_to_1_clustered_2 + belong_to_2_clustered_1
+	# total = genotypes_PCA.shape[0]
+	# success = (total-errors)/total
+	# print (success)
 	
 def read_my_labels( my_vector ):
 	'''
