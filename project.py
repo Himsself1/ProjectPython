@@ -282,6 +282,9 @@ pop_nams=args.population
 ######---------PART7-------------------------
 
 def k_means(input_file) :
+        '''
+        Takes as input the output of my_pca function!
+        '''
 	np_table=np.loadtxt(input_file, delimiter="\t", dtype="object")
 	header=pd.Series(np_table[:,0])
 	aa = read_my_labels(header)
@@ -305,3 +308,9 @@ def read_my_labels( my_vector ):
 	return aa
 
 k_means("pca_file.tsv")
+
+
+
+############### Part 8 ###########
+
+
