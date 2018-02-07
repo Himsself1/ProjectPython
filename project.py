@@ -281,16 +281,17 @@ pop_nams=args.population
 
 ######---------PART7-------------------------
 
-def k_means(input_file) :
+def k_means(input_file):
         '''
         Takes as input the output of my_pca function!
         '''
-	np_table=np.loadtxt(input_file, delimiter="\t", dtype="object")
-	header=pd.Series(np_table[:,0])
-	aa = read_my_labels(header)
-	genotypes_PCA=np_table[:,1:]
-	kmeans = KMeans(n_clusters=4, random_state=0).fit(genotypes_PCA)
-	print (kmeans.labels_)
+        np_table=np.loadtxt(input_file, delimiter="\t", dtype="object")
+        header=pd.Series(np_table[:,0])
+        aa = read_my_labels(header)
+        genotypes_PCA=np_table[:,1:]
+        kmeans = KMeans(n_clusters=4, random_state=0).fit(genotypes_PCA)
+        print(kmeans.labels_)
+        
 	# belong_to_1_clustered_2 = sum([1 for i,x in enumerate(kmeans.labels_) if i<aa["YRI"] and x==0])
 	# belong_to_2_clustered_1 = sum([1 for i,x in enumerate(kmeans.labels_) if i>=aa["YRI"] and x==1])
 	# errors = belong_to_1_clustered_2 + belong_to_2_clustered_1
@@ -308,7 +309,6 @@ def read_my_labels( my_vector ):
 	return aa
 
 k_means("pca_file.tsv")
-
 
 
 ############### Part 8 ###########
