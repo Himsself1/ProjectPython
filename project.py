@@ -285,12 +285,16 @@ def k_means(input_file):
         '''
         Takes as input the output of my_pca function!
         '''
-        np_table=np.loadtxt(input_file, delimiter="\t", dtype="object")
+        np_table = np.loadtxt(input_file,
+                       delimiter = '\t',
+                       dtype = 'object')
         header=pd.Series(np_table[:,0])
         aa = read_my_labels(header)
-        genotypes_PCA=np_table[:,1:]
+        genotypes_PCA=np_table[:,1:].astype(float)
+        print(genotypes_PCA[0:5,:])
+        make_pca_plots( input_file, aa, 'test.plot.html' )
         kmeans = KMeans(n_clusters=4, random_state=0).fit(genotypes_PCA)
-        print(kmeans.labels_)
+        ##        print(kmeans.labels_)
         
 	# belong_to_1_clustered_2 = sum([1 for i,x in enumerate(kmeans.labels_) if i<aa["YRI"] and x==0])
 	# belong_to_2_clustered_1 = sum([1 for i,x in enumerate(kmeans.labels_) if i>=aa["YRI"] and x==1])
@@ -308,7 +312,50 @@ def read_my_labels( my_vector ):
 	aa = kefali.groupby("population").count()
 	return aa
 
-k_means("pca_file.tsv")
+
+def flatten( list_of_lists ):
+    '''
+    concatenates list of lists as a single list
+    '''
+    return [item for sublist in list_of_lists for item in sublist]
+       
+def make_pca_plots( eisodos, flags, out ):
+    '''
+    Takes as input a numpy array and a groupby object and makes a plot
+    that is storred as <out> 
+    '''
+    data = dict(
+        x = eisodos[:,0],
+        y = eisodos[:,1],
+        size = [12]*eisodos.shape[0],
+        colors = flatten([[Spectral11[i]]*j[0] for i, j in enumerate(flags.values)]),
+        )
+    source = ColumnDataSource( data )
+    bliblikia = ['box_zoom','pan','save','reset','tap','wheel_zoom']
+    run = figure(
+        plot_width = 1000,
+        plot_height = 600,
+        tools = bliblikia
+        )
+    run.circle(
+        data['x'], data['y'],
+        size = data['size'],
+        fill_color = data['colors'], 
+        fill_alpha = 0.8,
+        )
+    run.xaxis.axis_label = 'PC1'
+    run.yaxis.axis_label = 'PC2'
+    save(run, out)
+    return( data )
+
+############## Den trexei akribws 
+make_pca_plots( genotypes_PCA, aa, 'out.plot.html' ) 
+
+k_means( 'pca_file.tsv' )
+
+################## Testing Bokeh Plots ###################
+
+
 
 
 ############### Part 8 ###########
