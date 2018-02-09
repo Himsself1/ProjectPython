@@ -292,7 +292,7 @@ def k_means(input_file):
         aa = read_my_labels(header)
         genotypes_PCA=np_table[:,1:].astype(float)
         print(genotypes_PCA[0:5,:])
-        make_pca_plots( input_file, aa, 'test.plot.html' )
+        make_pca_plots( genotypes_PCA, aa, 'test.plot.html' )
         kmeans = KMeans(n_clusters=4, random_state=0).fit(genotypes_PCA)
         ##        print(kmeans.labels_)
         
@@ -313,45 +313,12 @@ def read_my_labels( my_vector ):
 	return aa
 
 
-def flatten( list_of_lists ):
-    '''
-    concatenates list of lists as a single list
-    '''
-    return [item for sublist in list_of_lists for item in sublist]
-       
-def make_pca_plots( eisodos, flags, out ):
-    '''
-    Takes as input a numpy array and a groupby object and makes a plot
-    that is storred as <out> 
-    '''
-    data = dict(
-        x = eisodos[:,0],
-        y = eisodos[:,1],
-        size = [12]*eisodos.shape[0],
-        colors = flatten([[Spectral11[i]]*j[0] for i, j in enumerate(flags.values)]),
-        )
-    source = ColumnDataSource( data )
-    bliblikia = ['box_zoom','pan','save','reset','tap','wheel_zoom']
-    run = figure(
-        plot_width = 1000,
-        plot_height = 600,
-        tools = bliblikia
-        )
-    run.circle(
-        data['x'], data['y'],
-        size = data['size'],
-        fill_color = data['colors'], 
-        fill_alpha = 0.8,
-        )
-    run.xaxis.axis_label = 'PC1'
-    run.yaxis.axis_label = 'PC2'
-    save(run, out)
-    return( data )
+############## TREXEI!!! ###############
 
-############## Den trexei akribws 
-make_pca_plots( genotypes_PCA, aa, 'out.plot.html' ) 
-
+from make_bokeh_plots import *
 k_means( 'pca_file.tsv' )
+
+
 
 ################## Testing Bokeh Plots ###################
 
