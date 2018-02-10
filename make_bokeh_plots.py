@@ -1,7 +1,7 @@
 from bokeh.io import output_notebook, show, save
 from bokeh.plotting import figure, ColumnDataSource
 from bokeh.models import HoverTool
-import math, decimal
+import math
 import numpy as np
 import re
 import pandas as pd
