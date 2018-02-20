@@ -1,0 +1,2 @@
+py project2.py --vcf chr22_200_lines.vcf --sample_filename sample_information.csv --population GBR 100 --SNPs 100 --output outputfile.vcf -- population FIN 100 -- population YRI 200 --independent 1000
+py project2.py --input_filename outputfile.vcf --PCA_filename pca.txt --PCA_plot pca.pdf
