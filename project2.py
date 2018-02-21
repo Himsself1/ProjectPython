@@ -13,6 +13,7 @@ from sklearn.cluster import KMeans
 import random
 import matplotlib.pyplot as plt
 import sys
+import collections as cl
 ##################
 
 ##################### ------------our arguments-----------------------
@@ -96,7 +97,7 @@ def convert_genotype_to_number(z):
 	# ## 	print( z[ z not in np.array([0,1,2])] )
 	# assert(False)
 	return z
-	
+
 def generate_pop_freq( my_data, sample_data, pop_name, independent=None ):
 	'''
 	Generates a frequency vector for each SNP for individuals in a given population
@@ -116,7 +117,6 @@ def generate_pop_freq( my_data, sample_data, pop_name, independent=None ):
 		raise Exception( "Population name: {} was not in the list of names: {}".format(pop.name, pop_dict.keys()))
 	return np.array( ret.sum( axis = 0 )/ (2*ret.shape[0]) )
 
-	
 def create_output_list( frequency, pop_name, sample_number , index) :
 
 	output_list = []
@@ -140,17 +140,11 @@ def create_output_list( frequency, pop_name, sample_number , index) :
 			output_list.append(genotype)
 	
 	return pd.DataFrame(output_list)
-		
-		
-
-
-
 
 def simulate(input_file, sample_file, population_list, snps, my_output_file, independent=None) :
 	data=read_vcf_file(input_file)
 	#data.to_csv(my_output_file, sep="\t", mode='w', index=False)
 	sample_table = np.loadtxt( sample_file, delimiter = "\t", skiprows = 1, dtype = "object" )  ## Stores the decription of individuals
-
 	populations=[i[0] for i in population_list]
 	population_sizes={i[0]:int(i[1]) for i in population_list}
 	header=[pop_name+"_"+str(k) for pop_name in populations for k in range(1,int(population_sizes[pop_name])+1)  ]
@@ -162,10 +156,8 @@ def simulate(input_file, sample_file, population_list, snps, my_output_file, ind
 	if independent==None :
 		pd.concat(output_list, axis=1).to_csv(my_output_file, sep="\t", mode='w', index=False)
 	elif independent > 0 :
-		independent_frequencies = np.array([ float(population_sizes[i])*population_frequences[i] 
-		for i in populations ]).sum(axis = 0)/float(sum(population_sizes.values()))
-		independent_output_list=create_output_list(independent_frequencies, "independent" , sum(population_sizes.values()),
-		[random.choice(range(0,data.shape[0])) for i in range(0,independent)])
+		independent_frequencies = np.array([ float(population_sizes[i])*population_frequences[i] for i in populations ]).sum(axis = 0)/float(sum(population_sizes.values()))
+		independent_output_list=create_output_list(independent_frequencies, "independent" , sum(population_sizes.values()),[random.choice(range(0,data.shape[0])) for i in range(0,independent)])
 		independent_output_list.columns=header
 		q=pd.concat(output_list, axis=1)
 		q.columns=header
@@ -181,7 +173,6 @@ def read_my_labels( my_vector ):
 	kefali["index"] = pd.to_numeric(kefali['index'])
 	aa = kefali.groupby("population").count()
 	return aa
-	
 
 def my_pca(input_file, output_file, plot_file) :
 	np_table=np.loadtxt(input_file, delimiter="\t", dtype="object")
@@ -205,6 +196,52 @@ def my_pca(input_file, output_file, plot_file) :
 
 
 #q=eval(args.action[0])#read_vcf_file(file_name[0])
-##simulate(file_name,sample_file, args.population, args.SNPs, args.output, args.independent)
+#simulate(file_name,sample_file, args.population, args.SNPs, args.output, args.independent)
 
-my_pca(args.input_filename, args.PCA_filename, args.PCA_plot)
+# my_pca(args.input_filename, args.PCA_filename, args.PCA_plot)
+
+################# END OF TEST for PCA ################
+################ PART 8 ####################
+def find_majority( mia_lista, error, exclude ):
+	'''
+	Briskei to stoixeio me to megalutero frequency sth mia_lista
+	mono ean den to exei 3anabrei
+	'''
+	count_dict=cl.Counter( mia_lista )
+	b=(max( [[count_dict[kleidi], kleidi] for kleidi in count_dict.keys() if kleidi not in exclude]))
+	error.append( mia_lista.shape[0] - mia_lista[ mia_lista == b[1] ].shape[0] )
+	exclude.append(b[1])
+	return error, exclude
+
+def k_means(input_file):
+	'''
+	Takes as input the output of my_pca function!
+	Kanei k-means analoga me to posoi diaforetikoi plh8usmoi uparxoun sto deigma
+	Kai briskei to error rate
+	'''
+	np_table = np.loadtxt(input_file, delimiter = '\t', dtype = 'object')
+	header=pd.Series(np_table[:,0])
+	aa = read_my_labels(header)
+	genotypes_PCA=np_table[:,1:].astype(float)
+	kmeans = KMeans(n_clusters=aa['index'].shape[0], random_state=0).fit(genotypes_PCA)
+	left = 0
+	error = []
+	exclude = []
+	for i in aa['index']:
+		error, exclude = find_majority( kmeans.labels_[left: left+i], error, exclude )
+		left += i
+	total_error = sum(error)/kmeans.labels_.shape[0]
+	print(total_error)
+ 
+ 
+######## End of Part 8 ###########
+def find_ratio(input_file, sample_file, population_list, snps, my_output_file, independent=None):
+	for True:
+		simulate( input_file, sample_file, population_list, snps, my_output_file, independent )
+		q=create_output_list( frequency, pop_name, sample_number , index)
+		
+		snps = snps + 10
+		if (error_prin - error_meta) < threshold:
+			break ## sokolata!
+		
+k_means('pca.txt')
