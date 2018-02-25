@@ -16,7 +16,7 @@ import sys
 import collections as cl
 ##################
 
-##################### ------------our arguments-----------------------
+##################### ------------our arguments-----------------------###############
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--vcf', type=str)
@@ -29,11 +29,16 @@ parser.add_argument('--independent', type=int)
 parser.add_argument('--input_filename', type=str)
 parser.add_argument('--PCA_filename', type=str)
 parser.add_argument('--PCA_plot', type=str)
+parser.add_argument('--ITERATIONS', type=int)
+parser.add_argument('---MINIMUM_AF', type=int)
+parser.add_argument('--START', type=int)
+parser.add_argument('--END', type=int)
 
-print ("\n")
+
+
+
 args = parser.parse_args()
-file_name=args.vcf
-sample_file=args.sample_filename
+
 def read_vcf_file(file_name):
 	'''
 	Create a pandas table of a .vcf file (even if it's compressed)
@@ -53,7 +58,7 @@ def read_vcf_file(file_name):
 		df=df[df['INFO'].str.contains("VT=SNP")] 
 		return df[~df['INFO'].str.contains("MULTI")]  ###dataframe contains only SNP's
 	else :
-		raise Exception("Invalid File Extension")
+		raise Exception("Invalid File Extension. File needs to end with .vcf or .vcf.gz")
 	
 def vcf_info(file_name) :
 	df=read_vcf_file(file_name)
@@ -93,9 +98,6 @@ def convert_genotype_to_number(z):
 	z[ z == '1|0' ] = 1
 	z[ z == '0|1' ] = 1
 	z[ z == '1|1' ] = 2
-	# [ print(j) for i in z for j in i if j not in np.array([0,1,2]) ]
-	# ## 	print( z[ z not in np.array([0,1,2])] )
-	# assert(False)
 	return z
 
 def generate_pop_freq( my_data, sample_data, pop_name, independent=None ):
@@ -118,16 +120,13 @@ def generate_pop_freq( my_data, sample_data, pop_name, independent=None ):
 	return np.array( ret.sum( axis = 0 )/ (2*ret.shape[0]) )
 
 def create_output_list( frequency, pop_name, sample_number , index) :
-
+	'''
+	Creates the simulated data for one population
+	'''
 	output_list = []
-	# print( '1: {}'.format(frequency) )
-	# print( '2: {}'.format(sample_number) )
-	# print( '3: {}'.format(index) )
-	# assert(False)
 	for it in range(0,len(index)):
 		snp_freq = frequency[index[it]]
 		ones = int(snp_freq*2*float(sample_number)) ## Posa 1 8a uparxoun sto dataset? Takes the integer part of the number
-		###print (ones, snp_freq, sample_number, index[it])
 		if ones==0 :
 			genotype = ["0"+'|'+"0" for k in range(0,sample_number*2-1,2) ] ## Kanw concatenate to genotype
 			output_list.append(genotype)
@@ -141,29 +140,32 @@ def create_output_list( frequency, pop_name, sample_number , index) :
 	
 	return pd.DataFrame(output_list)
 
-def simulate(input_file, sample_file, population_list, snps, my_output_file, independent=None) :
-	data=read_vcf_file(input_file)
-	#data.to_csv(my_output_file, sep="\t", mode='w', index=False)
-	sample_table = np.loadtxt( sample_file, delimiter = "\t", skiprows = 1, dtype = "object" )  ## Stores the decription of individuals
+def simulation(data, sample_table, population_list, snps,  independent=None) :
 	populations=[i[0] for i in population_list]
 	population_sizes={i[0]:int(i[1]) for i in population_list}
 	header=[pop_name+"_"+str(k) for pop_name in populations for k in range(1,int(population_sizes[pop_name])+1)  ]
 	population_frequences={i:generate_pop_freq(data,sample_table, i ) for i in populations}
-	## print(population_frequences)
 	snp_freq_index=[random.choice(range(0,data.shape[0])) for i in range(0,snps)]
 	output_list=[create_output_list(population_frequences[k], k , population_sizes[k], snp_freq_index) for k in populations]
-	## assert(False)
-	if independent==None :
-		pd.concat(output_list, axis=1).to_csv(my_output_file, sep="\t", mode='w', index=False)
-	elif independent > 0 :
+ 
+	if snps > 0 and independent==None:
+		dependent_frame=pd.concat(output_list, axis=1)
+		dependent_frame.columns=header
+		return dependent_frame
+	elif snps > 0 and independent>0 :
+		dependent_frame=pd.concat(output_list, axis=1)
+		dependent_frame.columns=header
 		independent_frequencies = np.array([ float(population_sizes[i])*population_frequences[i] for i in populations ]).sum(axis = 0)/float(sum(population_sizes.values()))
 		independent_output_list=create_output_list(independent_frequencies, "independent" , sum(population_sizes.values()),[random.choice(range(0,data.shape[0])) for i in range(0,independent)])
 		independent_output_list.columns=header
-		q=pd.concat(output_list, axis=1)
-		q.columns=header
-		pd.concat((q,independent_output_list), axis=0).to_csv(my_output_file, sep="\t", mode='w', index=False)
-	else:
-		raise Exception ('Independent variable must be integer' )
+		return pd.concat((dependent_frame,independent_output_list), axis=0) 
+	elif snps == 0 and  independent>0:
+		independent_frequencies = np.array([ float(population_sizes[i])*population_frequences[i] for i in populations ]).sum(axis = 0)/float(sum(population_sizes.values()))
+		independent_output_list=create_output_list(independent_frequencies, "independent" , sum(population_sizes.values()),[random.choice(range(0,data.shape[0])) for i in range(0,independent)])
+		independent_output_list.columns=header
+		return independent_output_list
+	else :
+		raise Exception ('Independent variable and SNPs number must be zero or positive integers only' )
 
 def read_my_labels( my_vector ):
 	'''
@@ -174,34 +176,27 @@ def read_my_labels( my_vector ):
 	aa = kefali.groupby("population").count()
 	return aa
 
-def my_pca(input_file, output_file, plot_file) :
-	np_table=np.loadtxt(input_file, delimiter="\t", dtype="object")
-	header=pd.Series(np_table[0,])
-	aa = read_my_labels(header)
-	genotypes_array=convert_genotype_to_number(np_table[1:,])
+def my_pca(np_table) :
+	'''
+	Principal component analysis to simulated data tables
+	'''
+	genotypes_array=convert_genotype_to_number(np_table)
 	pca = PCA(n_components=2)
 	pca.fit(genotypes_array.T)
 	genotypes_PCA = pca.transform(genotypes_array.T)
+	return genotypes_PCA
+	
+def pca_plot(genotypes_PCA, header) :
+	'''
+	Saves two-dimensional data produced b PCA
+	'''	
+	aa = read_my_labels(header)
 	left = 0
 	for i in aa.values:
 		plt.plot(genotypes_PCA[left:left+i[0],0], genotypes_PCA[left:left+i[0],1], '.', label=i)
 		left = left + i[0]
-	## plt.plot(genotypes_PCA[100:,0], genotypes_PCA[100:,1], '.', color="blue")
-	plt.savefig(plot_file)
-	header=np.array(header)
-	fmt="%s\t%f\t%f"
-	q=np.column_stack((header,genotypes_PCA))
-	np.savetxt(output_file, q ,fmt=fmt)
+	plt.savefig(args.PCA_plot)
 
-
-
-#q=eval(args.action[0])#read_vcf_file(file_name[0])
-#simulate(file_name,sample_file, args.population, args.SNPs, args.output, args.independent)
-
-# my_pca(args.input_filename, args.PCA_filename, args.PCA_plot)
-
-################# END OF TEST for PCA ################
-################ PART 8 ####################
 def find_majority( mia_lista, error, exclude ):
 	'''
 	Briskei to stoixeio me to megalutero frequency sth mia_lista
@@ -213,13 +208,12 @@ def find_majority( mia_lista, error, exclude ):
 	exclude.append(b[1])
 	return error, exclude
 
-def k_means(input_file):
+def k_means(np_table):
 	'''
 	Takes as input the output of my_pca function!
 	Kanei k-means analoga me to posoi diaforetikoi plh8usmoi uparxoun sto deigma
 	Kai briskei to error rate
 	'''
-	np_table = np.loadtxt(input_file, delimiter = '\t', dtype = 'object')
 	header=pd.Series(np_table[:,0])
 	aa = read_my_labels(header)
 	genotypes_PCA=np_table[:,1:].astype(float)
@@ -231,17 +225,55 @@ def k_means(input_file):
 		error, exclude = find_majority( kmeans.labels_[left: left+i], error, exclude )
 		left += i
 	total_error = sum(error)/kmeans.labels_.shape[0]
-	print(total_error)
+	return total_error
  
- 
-######## End of Part 8 ###########
-def find_ratio(input_file, sample_file, population_list, snps, my_output_file, independent=None):
-	for True:
-		simulate( input_file, sample_file, population_list, snps, my_output_file, independent )
-		q=create_output_list( frequency, pop_name, sample_number , index)
-		
-		snps = snps + 10
-		if (error_prin - error_meta) < threshold:
-			break ## sokolata!
-		
-k_means('pca.txt')
+def find_ratio(data, sample_table, population_list, independent=None):
+	simulation_table=simulation(data, sample_table, population_list, 0, independent)
+	simulation_table=np.vstack((np.array(simulation_table.columns),np.array(simulation_table)))
+	pca_table=my_pca(simulation_table[1:,])
+	k_means_value = k_means(np.column_stack((simulation_table[0,:],pca_table)))
+	while True :                                                    ################<<<<<<---- if's need work
+		dependent_simulation_table=simulation(data, sample_table, population_list, 10)
+		simulation_table=np.vstack((simulation_table,dependent_simulation_table))
+		pca_table=my_pca(simulation_table[1:,])
+		if abs(k_means_value - k_means(np.column_stack((simulation_table[0,:],pca_table))))>0.01 and k_means(np.column_stack((simulation_table[0,:],pca_table)))>0.2 :
+			k_means_value=k_means(np.column_stack((simulation_table[0,:],pca_table)))
+		elif k_means(np.column_stack((simulation_table[0,:],pca_table)))<0.2 :
+			#return k_means(np.column_stack((simulation_table[0,:],pca_table)))
+			return simulation_table.shape[0]-independent-1
+			break
+
+	
+
+
+
+################------- THIS IS HOW WE DO IT -----------################
+
+action=args.action
+if action == "VCF_INFO" :   ###part1
+	vcf_info(args.vcf)
+elif action == "VALIDATE_SAMPLE_INFO" : ####part 2
+	validate_sample(args.vcf, args.sample_filename)
+elif action== "SAMPLE_INFO" :   ####part 2
+	sample_info(args.sample_filename)
+elif action == "SIMULATE" :  ####parts 3-5
+	data=read_vcf_file(args.vcf)
+	sample_table = np.loadtxt( args.sample_filename, delimiter = "\t", skiprows = 1, dtype = "object" )  ## Stores the decription of individuals
+	simulation_table=simulation(data, sample_table , args.population, args.SNPs,  args.independent)
+	simulation_table.to_csv(args.output, sep="\t", mode='w', index=False)
+elif action == "PCA" : ### part 6
+	np_table=np.loadtxt(args.input_filename, delimiter="\t", dtype="object")
+	header=pd.Series(np_table[0,])
+	pca_table=my_pca(np_table[1:,])
+	pca_plot(pca_table, header)  ### for the plot 
+	header=np.array(header)
+	np.savetxt(args.PCA_filename, np.column_stack((header,pca_table)) ,fmt="%s\t%f\t%f")
+elif action == "CLUSTER" : ##part 7
+	pca_table=np.loadtxt(args.PCA_filename, delimiter = '\t', dtype = 'object')
+	print(k_means(pca_table))
+elif action == "FIND_RATIO" : ##part8
+	data=read_vcf_file(args.vcf)
+	sample_table = np.loadtxt( args.sample_filename, delimiter = "\t", skiprows = 1, dtype = "object" )  ## Stores the decription of individuals
+	ratio=find_ratio(data, sample_table, args.population ,args.independent)
+	print (ratio)
+	
