@@ -14,25 +14,27 @@ import random
 import matplotlib.pyplot as plt
 import sys
 import collections as cl
+from sklearn.metrics.pairwise import pairwise_distances
 ##################
 
 ##################### ------------our arguments-----------------------###############
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--vcf', type=str)
-parser.add_argument('--action')
-parser.add_argument('--sample_filename', type=str)
-parser.add_argument('--population', nargs = 2, action='append')
-parser.add_argument('--output', type=str)
-parser.add_argument('--SNPs', type=int)
-parser.add_argument('--independent', type=int)
-parser.add_argument('--input_filename', type=str)
-parser.add_argument('--PCA_filename', type=str)
-parser.add_argument('--PCA_plot', type=str)
-parser.add_argument('--ITERATIONS', type=int)
-parser.add_argument('---MINIMUM_AF', type=int)
-parser.add_argument('--START', type=int)
-parser.add_argument('--END', type=int)
+parser.add_argument('--vcf', type=str, help="Type your .vcf or .vcf.gz file. If your file is in different destination,you need to type the path too")
+parser.add_argument('--action', help="Type what action you want this program to perform", choices=["VCF_INFO","SAMPLE_INFO","VALIDATE_SAMPLE_INFO","SIMULATE","PCA","CLUSTER","FIND_RATIO","DENDROGRAM"])
+parser.add_argument('--sample_filename', type=str, help="Type the sample file")
+parser.add_argument('--population', nargs = 2, action='append', help="Type the name of the population and the desired sample number")
+parser.add_argument('--output', type=str, help="Type the name of the file you want to save the result with the desired file type and destination")
+parser.add_argument('--SNPs', type=int, help="Type how many number of SNPs you want to simulate")
+parser.add_argument('--independent', type=int,help="Type how many independent SNPs you want to simulate" )
+parser.add_argument('--input_filename', type=str, help="Type the name of the file you produced with the simulation action")
+parser.add_argument('--PCA_filename', type=str, help="Type the name of the file you want to save your PCA results")
+parser.add_argument('--PCA_plot', type=str, help="Type the name of the file you want to save your PCA plot")
+parser.add_argument('--ITERATIONS', type=int, help="Type how many times you want to find the independent-dependent ratio" )
+parser.add_argument('---MINIMUM_AF', type=int, help="Type the minimum frequency of an SNP for the simulation" )
+parser.add_argument('--START', type=int, help="Type the minimum position of SNPs you want to simulate" )
+parser.add_argument('--END', type=int, help="Type the maximum position of SNPs you want to simulate")
+parser.add_argument('--jaccard', type=str, help="Type anything to perform an action with Jaccard Index matrices")
 
 
 
@@ -99,6 +101,17 @@ def convert_genotype_to_number(z):
 	z[ z == '0|1' ] = 1
 	z[ z == '1|1' ] = 2
 	return z
+
+def convert_to_jaccard (z) :
+	z[ z == '0|0' ] = 0
+	z[ z == '1|0' ] = 1
+	z[ z == '0|1' ] = 1
+	z[ z == '1|1' ] = 1
+	return z
+
+def jaccard_index (table) :
+	jac_table=convert_to_jaccard(table)
+	return 1 - pairwise_distances(table.T, metric = "hamming")
 
 def generate_pop_freq( my_data, sample_data, pop_name, independent=None ):
 	'''
@@ -176,14 +189,20 @@ def read_my_labels( my_vector ):
 	aa = kefali.groupby("population").count()
 	return aa
 
-def my_pca(np_table) :
+def my_pca(np_table, jaccard=args.jaccard) :
 	'''
 	Principal component analysis to simulated data tables
 	'''
-	genotypes_array=convert_genotype_to_number(np_table)
-	pca = PCA(n_components=2)
-	pca.fit(genotypes_array.T)
-	genotypes_PCA = pca.transform(genotypes_array.T)
+	if jaccard== None :
+		genotypes_array=convert_genotype_to_number(np_table)
+		pca = PCA(n_components=2)
+		pca.fit(genotypes_array.T)
+		genotypes_PCA = pca.transform(genotypes_array.T)
+	else:
+		genotypes_array=convert_to_jaccard(np_table)
+		pca = PCA(n_components=2)
+		pca.fit(jaccard_index(np_table))
+		genotypes_PCA = pca.transform(jaccard_index(np_table))
 	return genotypes_PCA
 	
 def pca_plot(genotypes_PCA, header) :
@@ -232,7 +251,7 @@ def find_ratio(data, sample_table, population_list, independent=None):
 	simulation_table=np.vstack((np.array(simulation_table.columns),np.array(simulation_table)))
 	pca_table=my_pca(simulation_table[1:,])
 	k_means_value = k_means(np.column_stack((simulation_table[0,:],pca_table)))
-	while True :                                                    ################<<<<<<---- if's need work
+	while True :
 		dependent_simulation_table=simulation(data, sample_table, population_list, 10)
 		simulation_table=np.vstack((simulation_table,dependent_simulation_table))
 		pca_table=my_pca(simulation_table[1:,])
@@ -243,7 +262,7 @@ def find_ratio(data, sample_table, population_list, independent=None):
 			return simulation_table.shape[0]-independent-1
 			break
 
-	
+
 
 
 
@@ -276,4 +295,6 @@ elif action == "FIND_RATIO" : ##part8
 	sample_table = np.loadtxt( args.sample_filename, delimiter = "\t", skiprows = 1, dtype = "object" )  ## Stores the decription of individuals
 	ratio=find_ratio(data, sample_table, args.population ,args.independent)
 	print (ratio)
-	
+
+else:
+	raise Exception("Action not defined")
