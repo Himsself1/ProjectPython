@@ -5,4 +5,8 @@ py project2.py --input_filename outputfile.vcf --PCA_filename pca.txt --PCA_plot
 ::part 7
 py project2.py --PCA_filename pca.txt  --action CLUSTER
 ::part 8
-py project2.py --vcf chr22_3000_lines.vcf --sample_filename sample_information.csv --population FIN 100 --population YRI 200 --action FIND_RATIO --independent 100
+py project2.py --vcf chr22_3000_lines.vcf --sample_filename sample_information.csv --population FIN 100 --population YRI 200 --action FIND_RATIO --independent 100 --MINIMUM_AF 0.1 --START 16050678 --END 16206607 --iterations 10
+
+
+
+py project2.py --vcf chr22_3000_lines.vcf --action "VCF_INFO"
