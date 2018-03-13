@@ -324,13 +324,13 @@ def dendrogram (data, sample_table, independent=None, min_af = 0)  :
 					independent,
 					min_af)
 					for  pairs in list_of_pairs]
-	print(d)
+    ## 	print(d)
 
-	# ytdist = np.array(d)
-	# Z = hierarchy.linkage(ytdist, 'single')
-	# plt.figure(figsize=(15, 5))
-	# dn = hierarchy.dendrogram(Z, labels=all_populations)
-	# plt.show()
+	ytdist = np.array(d)
+	Z = hierarchy.linkage(ytdist, 'single')
+	plt.figure(figsize=(15, 5))
+	dn = hierarchy.dendrogram(Z, labels=all_populations)
+	plt.show()
 
 
 
