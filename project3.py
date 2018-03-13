@@ -289,10 +289,10 @@ def find_ratio(data, sample_table, population_list, population_sizes ,independen
 	k_means_value = k_means(np.column_stack((simulation_table[0,:],pca_table)))
 	counter = 0
 	while True :
-		print(counter,
-				simulation_table.shape[0]-independent-1,
-				k_means_value
-				)
+		# print(counter,
+				# simulation_table.shape[0]-independent-1,
+				# k_means_value
+				# )
 		counter += 1
 		dependent_simulation_table=simulation_dependent(data, 
 														sample_table,
@@ -302,20 +302,20 @@ def find_ratio(data, sample_table, population_list, population_sizes ,independen
 														min_af=args.MINIMUM_AF).as_matrix()
 		simulation_table=np.vstack((simulation_table,dependent_simulation_table))
 		pca_table=my_pca(simulation_table[1:,])
-		if k_means(np.column_stack((simulation_table[0,:],pca_table)))<0.1 and abs(k_means_value - k_means(np.column_stack((simulation_table[0,:],pca_table)))) < 0.01:
-			return simulation_table.shape[0]-independent-1
+		error_rate = k_means(np.column_stack((simulation_table[0,:],pca_table)))
+		if error_rate<0.1 and abs(k_means_value - error_rate) < 0.01:
+			return [simulation_table.shape[0]-independent-1, error_rate ]
 		elif (counter >= 100):
-			return simulation_table.shape[0]-independent-1
-			break
+			return [simulation_table.shape[0]-independent-1, error_rate ]
 		else:
-			k_means_value=k_means(np.column_stack((simulation_table[0,:],pca_table)))
+			k_means_value=error_rate
 
 def dendrogram (data, sample_table, independent=None, min_af = 0)  :
-
+	
 	population_sizes=dict(sample_table["pop"].value_counts())
 	populations=list(population_sizes.keys())
 	list_of_pairs = [[populations[p1], populations[p2]] for p1 in range(len(populations)) for p2 in range(p1+1,len(populations))]
-	print (population_sizes)
+
 
 	d=[find_ratio(data,
 					sample_table,
@@ -323,10 +323,11 @@ def dendrogram (data, sample_table, independent=None, min_af = 0)  :
 					{pairs[0]:population_sizes[pairs[0]], pairs[1]:population_sizes[pairs[1]]},
 					independent,
 					min_af)
+					
 					for  pairs in list_of_pairs]
-    ## 	print(d)
 
-	ytdist = np.array(d)
+
+	ytdist = np.array( [i[0] * i[1] for i in d ] )
 	Z = hierarchy.linkage(ytdist, 'single')
 	plt.figure(figsize=(15, 5))
 	dn = hierarchy.dendrogram(Z, labels=all_populations)

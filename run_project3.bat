@@ -21,4 +21,4 @@ py project3.py --vcf chr22_3000_lines.vcf --sample_filename sample_information.c
 
 py project3.py --vcf chr22_3000_lines.vcf --action "VCF_INFO"
 ::part 10
-py project3.py --vcf chr22_3000_lines.vcf --sample_filename sample_information.csv --action DENDROGRAM 
+py project3.py --vcf chr22_3000_lines.vcf --sample_filename sample_information.csv --action DENDROGRAM --independent 200
