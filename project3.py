@@ -311,9 +311,10 @@ def find_ratio(data, sample_table, population_list, population_sizes ,independen
 			k_means_value=error_rate
 
 def dendrogram (data, sample_table, independent=None, min_af = 0)  :
-	
+		
 	population_sizes=dict(sample_table["pop"].value_counts())
 	populations=list(population_sizes.keys())
+	##populations= ["GBR","PUR","CLM","BEB","JPT","YRI"]
 	list_of_pairs = [[populations[p1], populations[p2]] for p1 in range(len(populations)) for p2 in range(p1+1,len(populations))]
 
 
@@ -330,9 +331,9 @@ def dendrogram (data, sample_table, independent=None, min_af = 0)  :
 	ytdist = np.array( [i[0] * i[1] for i in d ] )
 	Z = hierarchy.linkage(ytdist, 'single')
 	plt.figure(figsize=(15, 5))
-	dn = hierarchy.dendrogram(Z, labels=all_populations)
+	dn = hierarchy.dendrogram(Z, labels=populations)
 	plt.show()
-
+	return ytdist
 
 
 ################------- THIS IS HOW WE DO IT -----------################
@@ -382,8 +383,9 @@ elif action == "FIND_RATIO" : ##part8
 elif action == "DENDROGRAM" :
 	data=read_vcf_file(args.vcf, start = args.START, end = args.END)
 	df=pd.read_csv(args.sample_filename, sep="\t", header = 0)
-	dendrogram(data, df, args.independent, args.MINIMUM_AF)
 	
+	q=dendrogram(data, df, args.independent, args.MINIMUM_AF)
+	np.np.savetxt("dendrogram_results.txt",  q ,fmt="%f")
 	
 
 	
