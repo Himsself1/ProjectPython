@@ -41,8 +41,6 @@ parser.add_argument('--END', type=int, help="Type the maximum position of SNPs y
 parser.add_argument('--jaccard', type=str, help="Type anything to perform an action with Jaccard Index matrices")
 
 
-
-
 args = parser.parse_args()
 
 def read_vcf_file(file_name, start=0, end=None):
@@ -306,7 +304,7 @@ def find_majority( mia_lista, error, exclude ):
 	error.append( mia_lista.shape[0] - mia_lista[ mia_lista == b[1] ].shape[0] )
 	exclude.append(b[1])
 	return error, exclude
-	
+
 
 def k_means(np_table):
 	'''
@@ -349,28 +347,24 @@ def find_ratio(data, sample_table, population_list, population_sizes, independen
 	k_means_value = k_means(np.column_stack((simulation_table[0,:],pca_table)))
 	counter = 0
 	while True:
-		# print(counter,
-		# simulation_table.shape[0]-independent-1,
-		# k_means_value
-		# )
 		counter += 1
 		dependent_simulation_table=simulation_dependent(data, 
 								sample_table,
 								population_list,
 								population_sizes,
-								int( 20 ),
+								int( independent/10 ),
 								min_af=args.MINIMUM_AF).as_matrix()
 		simulation_table = np.vstack((simulation_table,dependent_simulation_table))
 		pca_table = my_pca(simulation_table[1:,])
 		error_rate = k_means(np.column_stack((simulation_table[0,:],pca_table)))
 		if error_rate<0.1 and abs(k_means_value - error_rate) < 0.01:
-			return [simulation_table.shape[0]-independent-1, error_rate ]
-		elif (counter >= 1000):
-			return [simulation_table.shape[0]-independent-1, error_rate ]
+			return [int(simulation_table.shape[0]-independent-1), float(error_rate) ]
+		elif (counter >= 100):
+			return [float(simulation_table.shape[0]-independent-1), float(error_rate) ]
 		else:
 			k_means_value = error_rate
 
-def dendrogram (data, sample_table, independent=None, min_af = 0):
+def dendrogram (data, sample_table, independent=None, min_af = 0, iterations=1):
 	'''
 	Constructs a dendrogram between all populations described in the <sample_table> using the error metrics produced by the "find_ratio" funtion
 	<data> is the pandas DataFrame containing genotypes
@@ -381,20 +375,16 @@ def dendrogram (data, sample_table, independent=None, min_af = 0):
 	'''
 	population_sizes=dict(sample_table["pop"].value_counts())
 	populations=list(population_sizes.keys())
-	##populations= ["GBR","PUR","CLM","BEB","JPT","YRI"]
+	##populations= ["ITU","FIN","YRI"]
 	list_of_pairs = [[populations[p1], populations[p2]] for p1 in range(len(populations)) for p2 in range(p1+1,len(populations))]
-
-
-	d=[find_ratio(data,
-					sample_table,
-					pairs, 
-					{pairs[0]:population_sizes[pairs[0]], pairs[1]:population_sizes[pairs[1]]},
-					independent,
-					min_af)
-					
-					for  pairs in list_of_pairs]
-
-
+	d = [ np.array([find_ratio(data,
+						sample_table,
+						pairs, 
+						{pairs[0]:population_sizes[pairs[0]], pairs[1]:population_sizes[pairs[1]]},
+						independent,
+						min_af)
+						for i in range(0,iterations)]).mean(axis = 0)
+			for pairs in list_of_pairs]
 	ytdist = np.array( [i[0] * i[1] for i in d ] )
 	Z = hierarchy.linkage(ytdist, 'single')
 	plt.figure(figsize=(15, 5))
@@ -413,6 +403,11 @@ if action == "VCF_INFO" :	###part1
 		print ('--vcf must be a .vcf file or a zipped .vcf.gz file')
 		print('--------------------------------------------')
 		raise e
+	except FileNotFoundError as f :
+		print('--------------------------------------------')
+		print ("You need to put the right files with the corect paths in order to run this action.Please check for typing errors or your current folder" )
+		print('--------------------------------------------')
+		raise f
 elif action == "VALIDATE_SAMPLE_INFO" : ####part 2
 	try : validate_sample(args.vcf, args.sample_filename)
 	except FileNotFoundError as f :
@@ -423,7 +418,9 @@ elif action == "VALIDATE_SAMPLE_INFO" : ####part 2
 elif action== "SAMPLE_INFO" :	####part 2
 	try : sample_info(args.sample_filename)
 	except FileNotFoundError as f :
+		print('--------------------------------------------')
 		print ("You need to put the right files with the corect paths in order to run this action.Please check for typing errors or your current folder" )
+		print('--------------------------------------------')
 		raise f
 elif action == "SIMULATE" :  ####parts 3-5
 	try:
@@ -441,13 +438,19 @@ elif action == "SIMULATE" :  ####parts 3-5
 		else:
 			raise Exception ("The argument --independent must me a positive number") 
 	except FileNotFoundError as f :
+		print('--------------------------------------------')
 		print ("You need to put the right files with the corect paths  for the arguments --vcf and --sample_filename in order to run this action.Please check for typing errors or your current folder","\n" )
+		print('--------------------------------------------')
 		raise f
 	except TypeError as t :
+		print('--------------------------------------------')
 		print ("Pssible mistakes:,","\n","the argument --SNPs must me a positive integer","\n","the argument --population must have a specific population name and a positive integer","\n")
+		print('--------------------------------------------')
 		raise t
 	except Exception as e :
+		print('--------------------------------------------')
 		print ("The population name you typed is either spelled wrong or doesnt exist in the sample_filename or your vcf file. You can run the validate info action to make sure it exists in your files")
+		print('--------------------------------------------')
 		raise e
 elif action == "PCA" : ### part 6
 	try :
@@ -458,14 +461,18 @@ elif action == "PCA" : ### part 6
 		header=np.array(header)
 		np.savetxt(args.PCA_filename, np.column_stack((header,pca_table)) ,fmt="%s\t%f\t%f")
 	except FileNotFoundError as f :
+		print('--------------------------------------------')
 		print ("You need to put the right files with the corect paths  for the argument --input_filename in order to run this action.Please check for typing errors or your current folder","\n" )
+		print('--------------------------------------------')
 		raise f
 elif action == "CLUSTER" : ##part 7
 	try:
 		pca_table=np.loadtxt(args.PCA_filename, delimiter = '\t', dtype = 'object')
-		print(k_means(pca_table))
+		print("Error rate is {}".format(k_means(pca_table)))
 	except FileNotFoundError as f :
+		print('--------------------------------------------')
 		print ("You need to put the right files with the corect paths  for the argument --PCA_filename in order to run this action.Please check for typing errors or your current folder","\n" )
+		print('--------------------------------------------')
 		raise f
 elif action == "FIND_RATIO" : ##part8
 	try:
@@ -475,10 +482,10 @@ elif action == "FIND_RATIO" : ##part8
 		population_sizes={i[0]:int(i[1]) for i in args.population}
 		ratio_table = np.array( [find_ratio(data, sample_table, populations, population_sizes, args.independent, args.MINIMUM_AF) 
 								for i in range(0,args.iterations) ] )
-		print (ratio_table)
+		print ("SNPs needed", np.mean([i[0] for i in ratio_table]))
 		if len(ratio_table) > 1:
 			print( 'Confidence Interval: ')
-			print (st.t.interval(0.95, len(ratio_table)-1, loc=np.mean(ratio_table), scale=st.sem(ratio_table)))
+			print (st.t.interval(0.95, float(len(ratio_table)-1), loc=np.mean([i[0] for i in ratio_table]), scale=st.sem([i[0] for i in ratio_table])))
 	except FileNotFoundError as f :
 		print('--------------------------------------------')
 		print ("You need to put the right files with the corect paths  for the arguments --vcf and --sample_filename in order to run this action.Please check for typing errors or your current folder","\n" )
@@ -498,8 +505,8 @@ elif action == "DENDROGRAM" :
 	try:	
 		data=read_vcf_file(args.vcf, start = args.START, end = args.END)
 		df=pd.read_csv(args.sample_filename, sep="\t", header = 0)
-		q=dendrogram(data, df, args.independent, args.MINIMUM_AF)
-		np.np.savetxt("dendrogram_results.txt",  q ,fmt="%f")
+		q=dendrogram(data, df, args.independent, args.MINIMUM_AF, iterations=args.iterations)
+		np.savetxt("dendrogram_results.txt",  q ,fmt="%f")
 	except FileNotFoundError as f :
 		print('--------------------------------------------')
 		print ("You need to put the right files with the corect paths  for the arguments --vcf and --sample_filename in order to run this action.Please check for typing errors or your current folder","\n" )
