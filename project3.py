@@ -45,33 +45,81 @@ parser.add_argument('--jaccard', type=str, help="Type anything to perform an act
 
 args = parser.parse_args()
 
-def read_vcf_file(file_name, start=0, end=None):
-	'''
-	Create a pandas table of a .vcf file (even if it's compressed)
-	authors: Maria Malliarou and Stefanos Papadantonakis
-	'''
-	if file_name.endswith(".vcf.gz") or file_name.endswith(".vcf") :
-		comms = 0
-		f = gzip.open if file_name.endswith('.gz') else open
-		with f(file_name) as file: ####count how many lines are comments
-			for line in file:
-				line=line.decode() if type(line)==bytes else line
-				if line.startswith('##'):
-					comms += 1
-				else:
-					break
-		comp = 'gzip' if file_name.endswith('.gz') else None
-		df=pd.read_table(file_name, compression=comp, skiprows=comms, header=0)
-		df=df[df['INFO'].str.contains("VT=SNP")]  
-		if end != None and end > start : 
-			return df[(~df['INFO'].str.contains("MULTI")) &
-					(df['POS'] > start) & 
-					(df['POS'] < end) ]  ###dataframe contains only SNP's
-		elif end == None :
-			return df[(~df['INFO'].str.contains("MULTI")) &
-			(df['POS'] > start) ]  ###dataframe contains only SNP's
-	else :
-		raise Exception("Invalid File Extension")
+print( 1 < math.inf )
+
+
+
+
+test = pd.DataFrame( ["foo", "bar", "baz"] )
+print( test[test == "bar"] )
+
+print(pop_index) 
+
+
+def read_vcf_file(file_name, start=0, end=math.inf, jaccard = None):
+        '''
+        Create a pandas table of a .vcf file (even if it's compressed)
+        authors: Maria Malliarou and Stefanos Papadantonakis
+        '''
+        
+        pops = ['GBR', 'YRI']
+        pop_freqs = pop_index = { i:[] for i in pops }
+        samples = pd.read_csv('sample_information.csv', sep="\t", header = 0)
+        pop_names = { i:population_columns(samples,i) for i in pops }
+        ind_genotypes = []
+        if file_name.endswith(".vcf.gz") or file_name.endswith(".vcf"):
+                comms = 0
+                f = gzip.open if file_name.endswith('.gz') else open
+                with f(file_name) as file: ####count how many lines are comments
+                        for line in file:
+                                line=line.decode() if type(line)==bytes else line
+                                if line.startswith('##'):
+                                        comms += 1
+                                elif line.startswith('#'):
+                                        head = line.split('\t')
+                                        [ pop_index[i].append(head.index(j)) for i in pops for j in pop_names[i] ]
+                                        assert(0)
+                                elif jaccard != None:
+                                        ind_genotypes.append( convert_to_jaccard((line.split('\t')[9:])) )
+                                        assert(0)
+                                else:
+                                        
+                                        temp = line.split('\n')[0].split('\t')
+                                        ind_genotypes.append( convert_genotype_to_number(temp) )
+                                        print( ind_genotypes )
+                                        assert(0)
+                        # print( head )
+                        # # for line in file:
+                        # #         print(line)
+                        # assert(0)
+                        # comp = 'gzip' if file_name.endswith('.gz') else None
+                        # cols = pd.DataFrame(pd.read_table( file_name, compression = comp, skiprows = comms, chunksize = 1).get_chunk(1))
+                        # print( cols )
+                        # assert(0)
+                        # for chunk in pd.read_table( file_name, compression = comp, chunksize = 10):
+                        #         # temp = chunk[(chunk['INFO'].str.contains('VT=SNP')) &
+                        #         #              (~chunk['INFO'].str.contains('MULTI')) &
+                        #         #              (chunk['POS'] > start) &
+                        #         #              (chunk['POS'] < end)]
+                        #         print( chunk )
+                        #         assert( 0 )
+                        # ## df=pd.read_table(file_name, compression=comp, skiprows=comms, header=0)
+                        # df=df[df['INFO'].str.contains("VT=SNP")]  
+                        # if end != None and end > start : 
+                        #         return df[(~df['INFO'].str.contains("MULTI")) &
+                        #                   (df['POS'] > start) & 
+                        #                   (df['POS'] < end) ]  ###dataframe contains only SNP's
+                        # elif end == None :
+                        #         return df[(~df['INFO'].str.contains("MULTI")) &
+                        #                   (df['POS'] > start) ]  ###dataframe contains only SNP's
+                        # else :
+                        #         raise Exception("Invalid File Extension")
+
+
+############## Testing read_vcf ###################
+read_vcf_file( 'chr22_400_lines.vcf' )
+file_name = 'chr22_400_lines.vcf'
+
 
 def vcf_info(file_name, start = 0, end = None) :
 	'''
