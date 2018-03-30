@@ -50,11 +50,18 @@ print( 1 < math.inf )
 
 
 
-test = pd.DataFrame( ["foo", "bar", "baz"] )
-print( test[test == "bar"] )
+test =  ["foo", "bar", "baz"]
+
+print( [test[i] for i in [1,2]] ) 
 
 print(pop_index) 
+print(head) 
+jaccard = None
 
+print( sum(convert_genotype_to_number(temp)) )
+a = convert_genotype_to_number(temp)
+print( a.astype(np.float).sum() )
+print( len(snp_freqs['GBR']) )
 
 def read_vcf_file(file_name, start=0, end=math.inf, jaccard = None):
         '''
@@ -63,10 +70,11 @@ def read_vcf_file(file_name, start=0, end=math.inf, jaccard = None):
         '''
         
         pops = ['GBR', 'YRI']
-        pop_freqs = pop_index = { i:[] for i in pops }
+        snp_freqs = { i:[] for i in pops }
+        pop_index = { i:[] for i in pops }
         samples = pd.read_csv('sample_information.csv', sep="\t", header = 0)
         pop_names = { i:population_columns(samples,i) for i in pops }
-        ind_genotypes = []
+        
         if file_name.endswith(".vcf.gz") or file_name.endswith(".vcf"):
                 comms = 0
                 f = gzip.open if file_name.endswith('.gz') else open
@@ -75,19 +83,22 @@ def read_vcf_file(file_name, start=0, end=math.inf, jaccard = None):
                                 line=line.decode() if type(line)==bytes else line
                                 if line.startswith('##'):
                                         comms += 1
+                                        pass
                                 elif line.startswith('#'):
-                                        head = line.split('\t')
-                                        [ pop_index[i].append(head.index(j)) for i in pops for j in pop_names[i] ]
-                                        assert(0)
-                                elif jaccard != None:
-                                        ind_genotypes.append( convert_to_jaccard((line.split('\t')[9:])) )
-                                        assert(0)
-                                else:
+                                        head = line.split('\n')[0].split('\t')
+                                        [ pop_index[i].append(np.array(head.index(j) -9))
+                                          for i in pops for j in pop_names[i] ]
+                                        for line in file:
+                                                if 'VT=SNP' in line and 'MULTI' not in line:
+                                                        if jaccard != None:
+                                                                temp = line.split('\n')[0].split('\t')[9:]
+                                                                [ snp_freqs[i].append(convert_to_jaccard(temp)[pop_index[i]].astype(np.int).sum()/len(pop_index[i])) for i in pops ]
+                                                        else:
+                                                                temp = line.split('\n')[0].split('\t')[9:]
+                                                                [ snp_freqs[i].append(convert_genotype_to_number(temp)[pop_index[i]].astype(np.int).sum()/len(pop_index[i])) for i in pops ]
+                                                else:
+                                                        pass
                                         
-                                        temp = line.split('\n')[0].split('\t')
-                                        ind_genotypes.append( convert_genotype_to_number(temp) )
-                                        print( ind_genotypes )
-                                        assert(0)
                         # print( head )
                         # # for line in file:
                         # #         print(line)
