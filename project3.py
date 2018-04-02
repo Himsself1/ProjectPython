@@ -45,23 +45,23 @@ parser.add_argument('--jaccard', type=str, help="Type anything to perform an act
 
 args = parser.parse_args()
 
-print( 1 < math.inf )
 
+test_file = gzip.open( file_name, 'rt' )
+counter = 0
+for line in test_file:
+        print(line)
+        counter += 1
+        assert( counter < 10 )
+        
 
+print((line.startswith('##')))
+        
 
-
-test =  ["foo", "bar", "baz"]
-
-print( [test[i] for i in [1,2]] ) 
-
-print(pop_index) 
 print(head) 
 jaccard = None
-
-print( sum(convert_genotype_to_number(temp)) )
-a = convert_genotype_to_number(temp)
-print( a.astype(np.float).sum() )
 print( type(snp_freqs['GBR']) )
+read_vcf_file( 'chr22_400_lines.vcf' )
+file_name = '1kgp_chr1.vcf.gz'
 
 def read_vcf_file(file_name, start=0, end=math.inf, jaccard = None):
         '''
@@ -73,6 +73,7 @@ def read_vcf_file(file_name, start=0, end=math.inf, jaccard = None):
         pop_index = { i:[] for i in pops }
         samples = pd.read_csv('sample_information.csv', sep="\t", header = 0)
         pop_names = { i:population_columns(samples,i) for i in pops }
+        iteration = 0
         if file_name.endswith(".vcf.gz") or file_name.endswith(".vcf"):
                 comms = 0
                 f = gzip.open if file_name.endswith('.gz') else open
@@ -88,17 +89,23 @@ def read_vcf_file(file_name, start=0, end=math.inf, jaccard = None):
                                           for i in pops for j in pop_names[i] ]
                                         if jaccard != None:
                                                 for line in file:
+                                                        line=line.decode() if type(line)==bytes else line
                                                         if 'VT=SNP' in line and 'MULTI' not in line:
                                                                 temp = line.split('\n')[0].split('\t')[9:]
                                                                 [ snp_freqs[i].append(convert_to_jaccard(temp)[pop_index[i]].astype(np.int).sum()/len(pop_index[i])) for i in pops ]
                                                         else: pass
+                                                        iteration += 1
+                                                        if (iteration % 1000) == 0: print( iteration )
                                         else:
                                                 for line in file:
+                                                        line=line.decode() if type(line)==bytes else line
                                                         if 'VT=SNP' in line and 'MULTI' not in line:
                                                                 temp = line.split('\n')[0].split('\t')[9:]
                                                                 [ snp_freqs[i].append(convert_to_jaccard(temp)[pop_index[i]].astype(np.int).sum()/len(pop_index[i])) for i in pops ]
                                                         else: pass
-
+                                                        iteration += 1
+                                                        if (iteration % 1000) == 0: print( iteration )
+        print('done')
                         # print( head )
                         # # for line in file:
                         # #         print(line)
@@ -128,8 +135,7 @@ def read_vcf_file(file_name, start=0, end=math.inf, jaccard = None):
 
 
 ############## Testing read_vcf ###################
-read_vcf_file( 'chr22_400_lines.vcf' )
-file_name = 'chr22_400_lines.vcf'
+
 
 
 def vcf_info(file_name, start = 0, end = None) :
