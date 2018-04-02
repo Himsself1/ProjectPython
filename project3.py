@@ -61,20 +61,18 @@ jaccard = None
 print( sum(convert_genotype_to_number(temp)) )
 a = convert_genotype_to_number(temp)
 print( a.astype(np.float).sum() )
-print( len(snp_freqs['GBR']) )
+print( type(snp_freqs['GBR']) )
 
 def read_vcf_file(file_name, start=0, end=math.inf, jaccard = None):
         '''
         Create a pandas table of a .vcf file (even if it's compressed)
         authors: Maria Malliarou and Stefanos Papadantonakis
         '''
-        
         pops = ['GBR', 'YRI']
         snp_freqs = { i:[] for i in pops }
         pop_index = { i:[] for i in pops }
         samples = pd.read_csv('sample_information.csv', sep="\t", header = 0)
         pop_names = { i:population_columns(samples,i) for i in pops }
-        
         if file_name.endswith(".vcf.gz") or file_name.endswith(".vcf"):
                 comms = 0
                 f = gzip.open if file_name.endswith('.gz') else open
@@ -88,17 +86,19 @@ def read_vcf_file(file_name, start=0, end=math.inf, jaccard = None):
                                         head = line.split('\n')[0].split('\t')
                                         [ pop_index[i].append(np.array(head.index(j) -9))
                                           for i in pops for j in pop_names[i] ]
-                                        for line in file:
-                                                if 'VT=SNP' in line and 'MULTI' not in line:
-                                                        if jaccard != None:
+                                        if jaccard != None:
+                                                for line in file:
+                                                        if 'VT=SNP' in line and 'MULTI' not in line:
                                                                 temp = line.split('\n')[0].split('\t')[9:]
                                                                 [ snp_freqs[i].append(convert_to_jaccard(temp)[pop_index[i]].astype(np.int).sum()/len(pop_index[i])) for i in pops ]
-                                                        else:
+                                                        else: pass
+                                        else:
+                                                for line in file:
+                                                        if 'VT=SNP' in line and 'MULTI' not in line:
                                                                 temp = line.split('\n')[0].split('\t')[9:]
-                                                                [ snp_freqs[i].append(convert_genotype_to_number(temp)[pop_index[i]].astype(np.int).sum()/len(pop_index[i])) for i in pops ]
-                                                else:
-                                                        pass
-                                        
+                                                                [ snp_freqs[i].append(convert_to_jaccard(temp)[pop_index[i]].astype(np.int).sum()/len(pop_index[i])) for i in pops ]
+                                                        else: pass
+
                         # print( head )
                         # # for line in file:
                         # #         print(line)
