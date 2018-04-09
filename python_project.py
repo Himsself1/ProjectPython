@@ -38,7 +38,7 @@ parser.add_argument('--PCA_plot', type=str, help="Type the name of the file you 
 parser.add_argument('--iterations', type=int, default = 1, help="Type how many times you want to find the independent-dependent ratio" )
 parser.add_argument('--MINIMUM_AF', type=float,default=0, help="Type the minimum frequency of an SNP for the simulation" )
 parser.add_argument('--START', type=int, default = 0, help="Type the minimum position of SNPs you want to simulate" )
-parser.add_argument('--END', type=int, help="Type the maximum position of SNPs you want to simulate")
+parser.add_argument('--END', type=int ,help="Type the maximum position of SNPs you want to simulate")
 parser.add_argument('--jaccard', type=str, help="Type anything to perform an action with Jaccard Index matrices")
 
 
@@ -132,8 +132,8 @@ def find_non_zero_AFs( dict_of_pop_freqs, min_af = 0.0 ):
 	values are numpy arrays
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	'''
-	table = np.array([ i for i in dict_of_pop_freqs.values() ]).sum( axis = 0 )/len( dict_of_pop_freqs.keys() )
-	return np.array( np.where( table >= min_af )[0] ) 
+	table = pd.DataFrame([ i for i in dict_of_pop_freqs.values() ]).sum( axis = 0 )/len( dict_of_pop_freqs.keys() )
+	return table.loc[table >= min_af].index
 
 def create_genotype( frequenc, sample_number ):
 	'''
@@ -156,14 +156,24 @@ def calculate_frequencies( data, individuals ):
 	<individuals> is a 1D pandas Data Frame with the names of individuals of the <data> 
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	'''
-	callset = allel.read_vcf(data, samples=individuals ,fields=['calldata/GT'])
+	callset = allel.read_vcf(data, samples=individuals,  fields=['calldata/GT'])
 	gt=allel.GenotypeDaskArray(callset['calldata/GT'])
 	no_alleles=gt.count_alleles().compute()
 	frequencies=np.sum(np.array(no_alleles[:,1:]),axis=1)
-	snp_type = allel.vcf_to_dataframe(data, fields=[ 'variants/is_snp'])
-	snp_only = snp_type[snp_type['is_snp'] == True]
+	snp_type = allel.vcf_to_dataframe(data, fields=[ 'variants/is_snp',"variants/POS"])
+	snp_type=snp_type[snp_type['is_snp'] == True]
 	index = list(snp_only.index.values)
-	return pd.DataFrame(frequencies[index])/(2*len(list(individuals)))
+	fr=pd.DataFrame(frequencies[index])/(2*len(list(individuals)))
+	return fr
+
+def select_start_end( data, start, end):
+	callset=allel.vcf_to_dataframe(data, fields=[ 'variants/is_snp',"variants/POS"])
+	callset=callset[callset['is_snp'] == True]
+	print (callset.shape[0])
+	q=pd.Series(callset['POS'])
+	q=q[q.between(start, end)]
+	q.index=np.arange(q.shape[0])
+	return q.index
 
 def population_columns( sample_matrix, pop_name ):
 	'''
@@ -190,7 +200,7 @@ def create_frequency_file(data, sample_table) :
 	pop_samples={i:population_columns(sample_table,i) for i in populations}
 	df_list=[]
 	for q in populations:
-		s=calculate_frequencies("chr22_200000_lines.vcf", pop_samples[q])  ###<<<<<<<<<<
+		s=calculate_frequencies(data, pop_samples[q])  ###<<<<<<<<<<
 		df_list.append(s)
 		print(len(df_list),"Now creating :",q)
 	q=pd.concat(df_list, axis=1)
@@ -205,11 +215,11 @@ def read_or_create_frequency_file(sample_filename, vcf):
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	'''
 	sample_table = pd.read_csv(sample_filename, sep="\t", header = 0)
-	if Path("frequencies_pop.csv").is_file():
+	if Path("frequencies.csv").is_file():
 		pass
 	else:
 		create_frequency_file(vcf, sample_table )
-	freq_table=pd.read_csv("frequencies_pop.csv", sep="\t", header=0)
+	freq_table=pd.read_csv("frequencies.csv", sep="\t", header=0)
 	return freq_table
 
 def simulation_dependent( pop_vecs, pop_names, sample_sizes, total_snps, min_af = 0 ):
@@ -224,6 +234,7 @@ def simulation_dependent( pop_vecs, pop_names, sample_sizes, total_snps, min_af 
 	<min_af> is the lnowest acceptable frequency of a SNP
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	'''
+	
 	index=find_non_zero_AFs(pop_vecs, min_af)
 	q=np.random.choice(index, size = int(total_snps), replace = True)
 	output_dict = { pop_names[i]: pd.DataFrame([create_genotype(pop_vecs[pop_names[i]][ind], sample_sizes[pop_names[i]]) for ind in q],
@@ -439,9 +450,14 @@ elif action == "SIMULATE" :  ####parts 3-5
 		freq_table=read_or_create_frequency_file(args.sample_filename, args.vcf)
 		populations=[i[0] for i in args.population]
 		population_sizes={i[0]:int(i[1]) for i in args.population}
-		pop_vectors={i:freq_table[i] for i in populations}
+		if args.END == None :
+			pop_vectors={i:freq_table[i] for i in populations}
+		elif args.END>0 :
+			pos_index=list(select_start_end(args.vcf, args.START, args.END))
+			pop_vectors={i:freq_table[i].iloc[pos_index] for i in populations}
+		else:
+			raise NameError
 		sample_table=pd.read_csv(args.sample_filename, sep="\t", header = 0)
-		print (pop_vectors.keys())
 		if args.independent == None :
 			simulation_table=simulation_dependent(pop_vectors, populations, population_sizes, args.SNPs, min_af=args.MINIMUM_AF)
 			simulation_table.to_csv(args.output, sep="\t", mode='w', index=False)
@@ -456,6 +472,11 @@ elif action == "SIMULATE" :  ####parts 3-5
 		print ("You need to put the right files with the corect paths  for the arguments --vcf and --sample_filename in order to run this action.Please check for typing errors or your current folder","\n" )
 		print('--------------------------------------------')
 		raise f
+	except NameError as n:
+		print('--------------------------------------------')
+		print ("The --END argument must always be a positive integer","\n")
+		print('--------------------------------------------')
+		raise n
 	except TypeError as t :
 		print('--------------------------------------------')
 		print ("Possible mistakes:,","\n","the argument --SNPs must me a positive integer","\n","the argument --population must have a specific population name and a positive integer","\n")
@@ -493,7 +514,13 @@ elif action == "FIND_RATIO" : ##part 8
 		freq_table=read_or_create_frequency_file(args.sample_filename, args.vcf)
 		populations=[i[0] for i in args.population]
 		population_sizes={i[0]:int(i[1]) for i in args.population}
-		pop_vectors={i:freq_table[i] for i in populations}
+		if args.END == None :
+			pop_vectors={i:freq_table[i] for i in populations}
+		elif args.END>0 :
+			pos_index=list(select_start_end(args.vcf, args.START, args.END))
+			pop_vectors={i:freq_table[i].iloc[pos_index] for i in populations}
+		else:
+			raise NameError
 		sample_table=pd.read_csv(args.sample_filename, sep="\t", header = 0)
 		ratio_table = np.array( [find_ratio(pop_vectors, sample_table, populations, population_sizes, args.independent, args.MINIMUM_AF, iter_time=i) 
 								for i in range(0,args.iterations) ] )
@@ -506,6 +533,11 @@ elif action == "FIND_RATIO" : ##part 8
 		print ("You need to put the right files with the corect paths  for the arguments --vcf and --sample_filename in order to run this action.Please check for typing errors or your current folder","\n" )
 		print('--------------------------------------------')
 		raise f
+	except NameError as n:
+		print('--------------------------------------------')
+		print ("The --END argument must always be a positive integer","\n")
+		print('--------------------------------------------')
+		raise n
 	except TypeError as t :
 		print('--------------------------------------------')
 		print ("Possible mistakes:,","\n","the argument --SNPs must me a positive integer","\n","the argument --population must have a specific population name and a positive integer","\n")
@@ -520,7 +552,16 @@ elif action == "DENDROGRAM" : ##part 10
 	try:	
 		freq_table=read_or_create_frequency_file(args.sample_filename, args.vcf)
 		sample_table=pd.read_csv(args.sample_filename, sep="\t", header = 0)
-		pop_vectors=freq_table.to_dict("series")
+		populations=freq_table.columns
+		if args.END == None :
+			pop_vectors={i:freq_table[i] for i in populations}
+		elif args.END>0 :
+			pos_index=list(select_start_end(args.vcf, args.START, args.END))
+			pop_vectors={i:freq_table[i].iloc[pos_index] for i in populations}
+		else:
+			raise NameError
+		print (pop_vectors)
+		assert(0)
 		q=dendrogram(pop_vectors, sample_table, args.independent, args.MINIMUM_AF, iterations=args.iterations)
 		np.savetxt("dendrogram_results.txt",  q ,fmt="%f")
 	except FileNotFoundError as f :
@@ -533,6 +574,11 @@ elif action == "DENDROGRAM" : ##part 10
 		print ("Pssible mistakes:,","\n","the argument --SNPs must me a positive integer","\n","the argument --population must have a specific population name and a positive integer","\n")
 		print('--------------------------------------------')
 		raise t
+	except NameError as n:
+		print('--------------------------------------------')
+		print ("The --END argument must always be a positive integer","\n")
+		print('--------------------------------------------')
+		raise n
 
 
 
