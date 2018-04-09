@@ -19,7 +19,6 @@ from scipy.cluster import hierarchy
 import scipy.stats as st
 import math as math
 import itertools
-import allel
 ##################
 
 ##################### ------------our arguments-----------------------###############
@@ -44,16 +43,41 @@ parser.add_argument('--jaccard', type=str, help="Type anything to perform an act
 
 args = parser.parse_args()
 
+def read_vcf_file(file_name, start=0, end=None):
+	'''
+	Create a pandas table of a .vcf file (even if it's compressed)
+	authors: Maria Malliarou and Stefanos Papadantonakis
+	'''
+	if file_name.endswith(".vcf.gz") or file_name.endswith(".vcf") :
+		comms = 0
+		f = gzip.open if file_name.endswith('.gz') else open
+		with f(file_name) as file: ####count how many lines are comments
+			for line in file:
+				line=line.decode() if type(line)==bytes else line
+				if line.startswith('##'):
+					comms += 1
+				else:
+					break
+		comp = 'gzip' if file_name.endswith('.gz') else None
+		df=pd.read_table(file_name, compression=comp, skiprows=comms, header=0)
+		df=df[df['INFO'].str.contains("VT=SNP")]  
+		if end != None and end > start : 
+			return df[(~df['INFO'].str.contains("MULTI")) &
+					(df['POS'] > start) & 
+					(df['POS'] < end) ]  ###dataframe contains only SNP's
+		elif end == None :
+			return df[(~df['INFO'].str.contains("MULTI")) &
+			(df['POS'] > start) ]  ###dataframe contains only SNP's
+	else :
+		raise Exception("Invalid File Extension")
 
 def vcf_info(file_name, start = 0, end = None) :
 	'''
 	Prints how many samples and SNPs are in your .vcf file
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	'''
-	callset=allel.read_vcf(file_name, fields=['samples', 'variants/is_snp'])
-	snps_number=np.count_nonzero(callset['variants/is_snp'])
-	sample_number=len(callset['samples'])
-	print ("File has", sample_number,"samples","\n","File has",snps_number,"SNPs" )
+	df=read_vcf_file(file_name, start, end)
+	print ("File has", df.shape[1]-9,"samples","\n","File has",df.shape[0],"SNPs" )
 
 def sample_info(sample_file):
 	'''
@@ -77,7 +101,7 @@ def validate_sample(file_name, sample_file ):
 	Confirms if the sample infomation file and the .vcf file have the same individuals
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	'''
-	our_samples=np.array(allel.read_vcf(file_name, fields=['samples'])["samples"])
+	our_samples=np.array(read_vcf_file(file_name).columns.values[9:])
 	id_array=np.array(pd.read_csv(sample_file, sep="\t", header = 0)["sample"].tolist())
 	if np.array_equiv(np.sort(our_samples),np.sort(id_array)):
 		print ("Everything is OK!")
@@ -156,14 +180,9 @@ def calculate_frequencies( data, individuals ):
 	<individuals> is a 1D pandas Data Frame with the names of individuals of the <data> 
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	'''
-	callset = allel.read_vcf(data, samples=individuals ,fields=['calldata/GT'])
-	gt=allel.GenotypeArray(callset['calldata/GT'])
-	no_alleles=gt.count_alleles()
-	frequencies=np.array(no_alleles[:,1])
-	snp_type = allel.vcf_to_dataframe(data, fields=[ 'variants/is_snp'])
-	snp_only = snp_type[snp_type['is_snp'] == True]
-	index = list(snp_only.index.values)
-	return frequencies[index]
+	temp_data = convert_genotype_to_number(data[individuals])
+	frequency = temp_data.sum( axis = 1 )
+	return frequency
 
 def population_columns( sample_matrix, pop_name ):
 	'''
@@ -317,7 +336,6 @@ def find_ratio(data, sample_table, population_list, population_sizes, independen
 	<min_af> is the lnowest acceptable frequency of a SNP
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	"""
-	print ("Finding error ratio in these populations",population_list,"\n")
 	simulation_table=simulation_independent(data,
 						sample_table,
 						population_list,
@@ -339,7 +357,6 @@ def find_ratio(data, sample_table, population_list, population_sizes, independen
 		simulation_table = np.vstack((simulation_table,dependent_simulation_table))
 		pca_table = my_pca(simulation_table[1:,])
 		error_rate = k_means(np.column_stack((simulation_table[0,:],pca_table)))
-		print (error_rate)
 		if error_rate<0.1 and abs(k_means_value - error_rate) < 0.01:
 			return [int(simulation_table.shape[0]-independent-1), float(error_rate) ]
 		elif (counter >= 100):
@@ -357,8 +374,8 @@ def dendrogram (data, sample_table, independent=None, min_af = 0, iterations=1):
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	'''
 	population_sizes=dict(sample_table["pop"].value_counts())
-	#populations=list(population_sizes.keys())
-	populations= ["ITU","FIN","YRI"]
+	populations=list(population_sizes.keys())
+	##populations= ["ITU","FIN","YRI"]
 	list_of_pairs = [[populations[p1], populations[p2]] for p1 in range(len(populations)) for p2 in range(p1+1,len(populations))]
 	d = [ np.array([find_ratio(data,
 						sample_table,
@@ -407,12 +424,12 @@ elif action== "SAMPLE_INFO" :	####part 2
 		raise f
 elif action == "SIMULATE" :  ####parts 3-5
 	try:
-		data=args.vcf
+		data=read_vcf_file(args.vcf, start = args.START, end = args.END)
 		sample_table = pd.read_csv('sample_information.csv', sep="\t", header = 0)
 		populations=[i[0] for i in args.population]
 		population_sizes={i[0]:int(i[1]) for i in args.population}
 		if args.independent == None :
-			simulation_table=simulation_dependent(args.vcf, sample_table, populations, population_sizes, args.SNPs, min_af=args.MINIMUM_AF)
+			simulation_table=simulation_dependent(data, sample_table, populations, population_sizes, args.SNPs, min_af=args.MINIMUM_AF)
 			simulation_table.to_csv(args.output, sep="\t", mode='w', index=False)
 		elif args.independent>0 :
 			simulation_table_dependent=simulation_dependent(data, sample_table, populations, population_sizes, args.SNPs, min_af=args.MINIMUM_AF)
@@ -459,7 +476,7 @@ elif action == "CLUSTER" : ##part 7
 		raise f
 elif action == "FIND_RATIO" : ##part8
 	try:
-		data=arg.vcf
+		data=read_vcf_file(args.vcf, start = args.START, end = args.END)
 		sample_table = pd.read_csv('sample_information.csv', sep="\t", header = 0)
 		populations=[i[0] for i in args.population]
 		population_sizes={i[0]:int(i[1]) for i in args.population}
@@ -486,7 +503,7 @@ elif action == "FIND_RATIO" : ##part8
 		raise e
 elif action == "DENDROGRAM" :
 	try:	
-		data=args.vcf
+		data=read_vcf_file(args.vcf, start = args.START, end = args.END)
 		df=pd.read_csv(args.sample_filename, sep="\t", header = 0)
 		q=dendrogram(data, df, args.independent, args.MINIMUM_AF, iterations=args.iterations)
 		np.savetxt("dendrogram_results.txt",  q ,fmt="%f")

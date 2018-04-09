@@ -5,20 +5,21 @@
 
 import argparse
 import gzip
-import re
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 import random
 import matplotlib.pyplot as plt
-import sys
 import collections as cl
 from sklearn.metrics.pairwise import pairwise_distances
 from scipy.cluster import hierarchy
 import scipy.stats as st
 import math as math
 import itertools
+import allel
+from pathlib import Path
+
 ##################
 
 ##################### ------------our arguments-----------------------###############
@@ -43,41 +44,16 @@ parser.add_argument('--jaccard', type=str, help="Type anything to perform an act
 
 args = parser.parse_args()
 
-def read_vcf_file(file_name, start=0, end=None):
-	'''
-	Create a pandas table of a .vcf file (even if it's compressed)
-	authors: Maria Malliarou and Stefanos Papadantonakis
-	'''
-	if file_name.endswith(".vcf.gz") or file_name.endswith(".vcf") :
-		comms = 0
-		f = gzip.open if file_name.endswith('.gz') else open
-		with f(file_name) as file: ####count how many lines are comments
-			for line in file:
-				line=line.decode() if type(line)==bytes else line
-				if line.startswith('##'):
-					comms += 1
-				else:
-					break
-		comp = 'gzip' if file_name.endswith('.gz') else None
-		df=pd.read_table(file_name, compression=comp, skiprows=comms, header=0)
-		df=df[df['INFO'].str.contains("VT=SNP")]  
-		if end != None and end > start : 
-			return df[(~df['INFO'].str.contains("MULTI")) &
-					(df['POS'] > start) & 
-					(df['POS'] < end) ]  ###dataframe contains only SNP's
-		elif end == None :
-			return df[(~df['INFO'].str.contains("MULTI")) &
-			(df['POS'] > start) ]  ###dataframe contains only SNP's
-	else :
-		raise Exception("Invalid File Extension")
 
 def vcf_info(file_name, start = 0, end = None) :
 	'''
 	Prints how many samples and SNPs are in your .vcf file
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	'''
-	df=read_vcf_file(file_name, start, end)
-	print ("File has", df.shape[1]-9,"samples","\n","File has",df.shape[0],"SNPs" )
+	callset=allel.read_vcf(file_name, fields=['samples', 'variants/is_snp'])
+	snps_number=np.count_nonzero(callset['variants/is_snp'])
+	sample_number=len(callset['samples'])
+	print ("File has", sample_number,"samples","\n","File has",snps_number,"SNPs" )
 
 def sample_info(sample_file):
 	'''
@@ -101,7 +77,7 @@ def validate_sample(file_name, sample_file ):
 	Confirms if the sample infomation file and the .vcf file have the same individuals
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	'''
-	our_samples=np.array(read_vcf_file(file_name).columns.values[9:])
+	our_samples=np.array(allel.read_vcf(file_name, fields=['samples'])["samples"])
 	id_array=np.array(pd.read_csv(sample_file, sep="\t", header = 0)["sample"].tolist())
 	if np.array_equiv(np.sort(our_samples),np.sort(id_array)):
 		print ("Everything is OK!")
@@ -176,13 +152,18 @@ def create_genotype( frequenc, sample_number ):
 def calculate_frequencies( data, individuals ):
 	'''
 	Returns the frequencies of all snps contained in <data[individuals]>
-	<data> is a pandas Data Frame
+	<data> is the vcf file containing all the genotypes
 	<individuals> is a 1D pandas Data Frame with the names of individuals of the <data> 
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	'''
-	temp_data = convert_genotype_to_number(data[individuals])
-	frequency = temp_data.sum( axis = 1 )
-	return frequency
+	callset = allel.read_vcf(data, samples=individuals ,fields=['calldata/GT'])
+	gt=allel.GenotypeDaskArray(callset['calldata/GT'])
+	no_alleles=gt.count_alleles().compute()
+	frequencies=np.sum(np.array(no_alleles[:,1:]),axis=1)
+	snp_type = allel.vcf_to_dataframe(data, fields=[ 'variants/is_snp'])
+	snp_only = snp_type[snp_type['is_snp'] == True]
+	index = list(snp_only.index.values)
+	return pd.DataFrame(frequencies[index])/(2*len(list(individuals)))
 
 def population_columns( sample_matrix, pop_name ):
 	'''
@@ -196,10 +177,45 @@ def population_columns( sample_matrix, pop_name ):
 	else:
 		return sample_matrix[sample_matrix['pop'].str.contains(pop_name)]['sample']
 
-def simulation_dependent( data, sample_matrix, pop_names, sample_sizes, total_snps, min_af = 0 ):
+def create_frequency_file(data, sample_table) :
+	'''
+	If our file containing all the SNPs frequencies doesnt exists, it creates it
+	<data> is the vcf file containing all the genotypes
+	<sample_filename> is the sample_information file
+	authors: Maria Malliarou and Stefanos Papadantonakis
+	'''
+	population_sizes=dict(sample_table["pop"].value_counts())
+	populations=list(population_sizes.keys())
+	pop_frequencies={}
+	pop_samples={i:population_columns(sample_table,i) for i in populations}
+	df_list=[]
+	for q in populations:
+		s=calculate_frequencies("chr22_200000_lines.vcf", pop_samples[q])  ###<<<<<<<<<<
+		df_list.append(s)
+		print(len(df_list),"Now creating :",q)
+	q=pd.concat(df_list, axis=1)
+	q.columns=populations
+	q.to_csv("frequencies.csv", sep="\t", index=False)
+
+def read_or_create_frequency_file(sample_filename, vcf):
+	'''
+	Checks if file containing SNPs frequencies exists.  If not it creates it by calling "create_frequency_file" function
+	<sample_filename> is the sample_information file
+	<vcf> is the file containing all the genotypes
+	authors: Maria Malliarou and Stefanos Papadantonakis
+	'''
+	sample_table = pd.read_csv(sample_filename, sep="\t", header = 0)
+	if Path("frequencies_pop.csv").is_file():
+		pass
+	else:
+		create_frequency_file(vcf, sample_table )
+	freq_table=pd.read_csv("frequencies_pop.csv", sep="\t", header=0)
+	return freq_table
+
+def simulation_dependent( pop_vecs, pop_names, sample_sizes, total_snps, min_af = 0 ):
 	'''
 	Simulates dependent genotypes
-	<data> is the pandas DataFrame containing genotypes
+	<pop_vectors> is the pandas DataFrame containing genotypes frequencies
 	<sample_matrix> is a pandas DataFrame containing information from the sample information file
 	<pop_names> is a python list with all the names of the populations provided by the command line
 	<sample_sizes> is a python dictionary with keys = pop_names and values = how many individuals are to be simulated
@@ -208,10 +224,6 @@ def simulation_dependent( data, sample_matrix, pop_names, sample_sizes, total_sn
 	<min_af> is the lnowest acceptable frequency of a SNP
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	'''
-	pop_vecs={}
-	for i in pop_names:
-		noumera = population_columns( sample_matrix, i )
-		pop_vecs[i]=calculate_frequencies( data, noumera )/(2*sample_sizes[i])
 	index=find_non_zero_AFs(pop_vecs, min_af)
 	q=np.random.choice(index, size = int(total_snps), replace = True)
 	output_dict = { pop_names[i]: pd.DataFrame([create_genotype(pop_vecs[pop_names[i]][ind], sample_sizes[pop_names[i]]) for ind in q],
@@ -221,10 +233,10 @@ def simulation_dependent( data, sample_matrix, pop_names, sample_sizes, total_sn
 	finale=pd.concat(output_dict.values(), axis=1)
 	return finale
 
-def simulation_independent( data, sample_matrix, pop_names, sample_sizes, independent, min_af = 0 ):
+def simulation_independent( pop_vecs, sample_table ,pop_names, sample_sizes, independent, min_af = 0 ):
 	'''
 	Simulates independent genotypes based on genotype frequencies of all populations in <pop_names>
-	<data> is the pandas DataFrame containing genotypes
+	<pop_vectors> is the pandas DataFrame containing genotypes frequencies
 	<sample_matrix> is a pandas DataFrame containing information from the sample information file
 	<pop_names> is a python list with all the names of the populations provided by the command line
 	<sample_sizes> is a python dictionary with keys = pop_names and values = how many individuals are to be simulated for each population
@@ -232,11 +244,9 @@ def simulation_independent( data, sample_matrix, pop_names, sample_sizes, indepe
 	<independent> is the number of SNPs to be simulated. It is provided by command line
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	'''
-	pop_vecs={}
-	for i in pop_names:
-		noumera = population_columns( sample_matrix, i )
-		pop_vecs[i]=calculate_frequencies( data, noumera )
-	total_freq=(np.sum(np.vstack(pop_vecs.values()), axis=0)) /(2*sum(sample_sizes.values())) 
+	population_sizes=dict(sample_table["pop"].value_counts())
+	new_pop_vecs={i:pop_vecs[i]*population_sizes[i] for i in pop_vecs.keys()}
+	total_freq=sum(new_pop_vecs.values())/sum(population_sizes[k] for k in pop_vecs.keys())
 	index=np.array( np.where( total_freq >= min_af )[0] )
 	q=np.random.choice(index, size = independent, replace = True)
 	output_dict = { pop_names[i]: pd.DataFrame([create_genotype(total_freq[ind], sample_sizes[pop_names[i]]) for ind in q],
@@ -305,7 +315,6 @@ def find_majority( mia_lista, error, exclude ):
 	exclude.append(b[1])
 	return error, exclude
 
-
 def k_means(np_table):
 	'''
 	Performs kmeans analysis with clusters = the number of different populations and returns the percentage of individuals labeled incorrectly (<total_error>)
@@ -324,11 +333,11 @@ def k_means(np_table):
 	total_error = sum(error)/kmeans.labels_.shape[0]
 	return total_error
  
-def find_ratio(data, sample_table, population_list, population_sizes, independent = None, min_af = 0):
+def find_ratio(pop_vecs, sample_table, population_list, population_sizes, independent = None, min_af = 0, iter_time=1):
 	"""
 	Find the minimum # of dependent SNPs needed in the sample, so that the error is less than 0.1. It outputs the # of SNPs and the eror_rate.
-	If the populations do not pass the error criterion after 1000 cycles, the function returns the current error rate as well.
-	<data> is the pandas DataFrame containing genotypes
+	If the populations do not pass the error criterion after 50 cycles, the function returns the current error rate as well.
+	<pop_vectors> is the pandas DataFrame containing genotypes frequencies
 	<sample_table> is a pandas DataFrame containing information from the sample information file
 	<population_list> is a python list with all the names of the populations provided by the command line
 	<populaiton_sizes> is a python dictionary with keys = pop_names and values = how many individuals are to be simulated for each population
@@ -336,7 +345,9 @@ def find_ratio(data, sample_table, population_list, population_sizes, independen
 	<min_af> is the lnowest acceptable frequency of a SNP
 	authors: Maria Malliarou and Stefanos Papadantonakis
 	"""
-	simulation_table=simulation_independent(data,
+	print ("Finding error ratio in these populations",population_list,". Iteration:",iter_time,"\n")
+	
+	simulation_table=simulation_independent(pop_vecs,
 						sample_table,
 						population_list,
 						population_sizes,
@@ -348,8 +359,7 @@ def find_ratio(data, sample_table, population_list, population_sizes, independen
 	counter = 0
 	while True:
 		counter += 1
-		dependent_simulation_table=simulation_dependent(data, 
-								sample_table,
+		dependent_simulation_table=simulation_dependent(pop_vecs,
 								population_list,
 								population_sizes,
 								int( independent/10 ),
@@ -357,17 +367,18 @@ def find_ratio(data, sample_table, population_list, population_sizes, independen
 		simulation_table = np.vstack((simulation_table,dependent_simulation_table))
 		pca_table = my_pca(simulation_table[1:,])
 		error_rate = k_means(np.column_stack((simulation_table[0,:],pca_table)))
-		if error_rate<0.1 and abs(k_means_value - error_rate) < 0.01:
+		print(error_rate)
+		if error_rate<0.1:
 			return [int(simulation_table.shape[0]-independent-1), float(error_rate) ]
-		elif (counter >= 100):
+		elif (counter >= 50):
 			return [float(simulation_table.shape[0]-independent-1), float(error_rate) ]
 		else:
 			k_means_value = error_rate
 
-def dendrogram (data, sample_table, independent=None, min_af = 0, iterations=1):
+def dendrogram (pop_vectors, sample_table, independent=None, min_af = 0, iterations=1):
 	'''
 	Constructs a dendrogram between all populations described in the <sample_table> using the error metrics produced by the "find_ratio" funtion
-	<data> is the pandas DataFrame containing genotypes
+	<pop_vectors> is the pandas DataFrame containing genotypes frequencies
 	<sample_table> is a pandas DataFrame containing information from the sample information file
 	<independent> is the number of SNPs to be simulated. It is provided by command line
 	<min_af> is the lnowest acceptable frequency of a SNP
@@ -375,9 +386,9 @@ def dendrogram (data, sample_table, independent=None, min_af = 0, iterations=1):
 	'''
 	population_sizes=dict(sample_table["pop"].value_counts())
 	populations=list(population_sizes.keys())
-	##populations= ["ITU","FIN","YRI"]
+	#populations= ["ITU","FIN","YRI","CLM","KHV"]
 	list_of_pairs = [[populations[p1], populations[p2]] for p1 in range(len(populations)) for p2 in range(p1+1,len(populations))]
-	d = [ np.array([find_ratio(data,
+	d = [ np.array([find_ratio(pop_vectors, 
 						sample_table,
 						pairs, 
 						{pairs[0]:population_sizes[pairs[0]], pairs[1]:population_sizes[pairs[1]]},
@@ -396,7 +407,8 @@ def dendrogram (data, sample_table, independent=None, min_af = 0, iterations=1):
 ################------- THIS IS HOW WE DO IT -----------################
 
 action=args.action
-if action == "VCF_INFO" :	###part1
+
+if action == "VCF_INFO" :	###part1  
 	try : vcf_info(args.vcf, start = args.START, end = args.END)
 	except Exception as e:
 		print('--------------------------------------------')
@@ -424,16 +436,18 @@ elif action== "SAMPLE_INFO" :	####part 2
 		raise f
 elif action == "SIMULATE" :  ####parts 3-5
 	try:
-		data=read_vcf_file(args.vcf, start = args.START, end = args.END)
-		sample_table = pd.read_csv('sample_information.csv', sep="\t", header = 0)
+		freq_table=read_or_create_frequency_file(args.sample_filename, args.vcf)
 		populations=[i[0] for i in args.population]
 		population_sizes={i[0]:int(i[1]) for i in args.population}
+		pop_vectors={i:freq_table[i] for i in populations}
+		sample_table=pd.read_csv(args.sample_filename, sep="\t", header = 0)
+		print (pop_vectors.keys())
 		if args.independent == None :
-			simulation_table=simulation_dependent(data, sample_table, populations, population_sizes, args.SNPs, min_af=args.MINIMUM_AF)
+			simulation_table=simulation_dependent(pop_vectors, populations, population_sizes, args.SNPs, min_af=args.MINIMUM_AF)
 			simulation_table.to_csv(args.output, sep="\t", mode='w', index=False)
 		elif args.independent>0 :
-			simulation_table_dependent=simulation_dependent(data, sample_table, populations, population_sizes, args.SNPs, min_af=args.MINIMUM_AF)
-			simulation_table_independent=simulation_independent(data, sample_table, populations, population_sizes, args.independent, min_af=args.MINIMUM_AF)
+			simulation_table_dependent=simulation_dependent(pop_vectors, populations, population_sizes, args.SNPs, min_af=args.MINIMUM_AF)
+			simulation_table_independent=simulation_independent(pop_vectors, sample_table, populations, population_sizes, args.independent, min_af=args.MINIMUM_AF)
 			pd.concat((simulation_table_dependent,simulation_table_independent), axis=0).to_csv(args.output, sep="\t", mode='w', index=False)
 		else:
 			raise Exception ("The argument --independent must me a positive number") 
@@ -444,7 +458,7 @@ elif action == "SIMULATE" :  ####parts 3-5
 		raise f
 	except TypeError as t :
 		print('--------------------------------------------')
-		print ("Pssible mistakes:,","\n","the argument --SNPs must me a positive integer","\n","the argument --population must have a specific population name and a positive integer","\n")
+		print ("Possible mistakes:,","\n","the argument --SNPs must me a positive integer","\n","the argument --population must have a specific population name and a positive integer","\n")
 		print('--------------------------------------------')
 		raise t
 	except Exception as e :
@@ -474,13 +488,14 @@ elif action == "CLUSTER" : ##part 7
 		print ("You need to put the right files with the corect paths  for the argument --PCA_filename in order to run this action.Please check for typing errors or your current folder","\n" )
 		print('--------------------------------------------')
 		raise f
-elif action == "FIND_RATIO" : ##part8
+elif action == "FIND_RATIO" : ##part 8
 	try:
-		data=read_vcf_file(args.vcf, start = args.START, end = args.END)
-		sample_table = pd.read_csv('sample_information.csv', sep="\t", header = 0)
+		freq_table=read_or_create_frequency_file(args.sample_filename, args.vcf)
 		populations=[i[0] for i in args.population]
 		population_sizes={i[0]:int(i[1]) for i in args.population}
-		ratio_table = np.array( [find_ratio(data, sample_table, populations, population_sizes, args.independent, args.MINIMUM_AF) 
+		pop_vectors={i:freq_table[i] for i in populations}
+		sample_table=pd.read_csv(args.sample_filename, sep="\t", header = 0)
+		ratio_table = np.array( [find_ratio(pop_vectors, sample_table, populations, population_sizes, args.independent, args.MINIMUM_AF, iter_time=i) 
 								for i in range(0,args.iterations) ] )
 		print ("SNPs needed", np.mean([i[0] for i in ratio_table]))
 		if len(ratio_table) > 1:
@@ -501,11 +516,12 @@ elif action == "FIND_RATIO" : ##part8
 		print ("The population name you typed is either spelled wrong or doesnt exist in the sample_filename or your vcf file. You can run the validate info action to make sure it exists in your files")
 		print('--------------------------------------------')
 		raise e
-elif action == "DENDROGRAM" :
+elif action == "DENDROGRAM" : ##part 10
 	try:	
-		data=read_vcf_file(args.vcf, start = args.START, end = args.END)
-		df=pd.read_csv(args.sample_filename, sep="\t", header = 0)
-		q=dendrogram(data, df, args.independent, args.MINIMUM_AF, iterations=args.iterations)
+		freq_table=read_or_create_frequency_file(args.sample_filename, args.vcf)
+		sample_table=pd.read_csv(args.sample_filename, sep="\t", header = 0)
+		pop_vectors=freq_table.to_dict("series")
+		q=dendrogram(pop_vectors, sample_table, args.independent, args.MINIMUM_AF, iterations=args.iterations)
 		np.savetxt("dendrogram_results.txt",  q ,fmt="%f")
 	except FileNotFoundError as f :
 		print('--------------------------------------------')
@@ -517,6 +533,8 @@ elif action == "DENDROGRAM" :
 		print ("Pssible mistakes:,","\n","the argument --SNPs must me a positive integer","\n","the argument --population must have a specific population name and a positive integer","\n")
 		print('--------------------------------------------')
 		raise t
+
+
 
 
 
